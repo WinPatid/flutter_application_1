@@ -1,8 +1,8 @@
 // ไฟล์: lib/main.dart
 import 'package:flutter/material.dart';
 
-// นำเข้าไฟล์หน้าจอหลักจากโฟลเดอร์ screens
-import 'screens/node_assist_screen.dart';
+// นำเข้าไฟล์หน้า Login ที่เพิ่งสร้างใหม่
+import 'screens/login_screen.dart'; 
 
 void main() {
   runApp(const NodeAssistApp());
@@ -24,7 +24,8 @@ class NodeAssistApp extends StatelessWidget {
         fontFamily: 'Roboto',
         useMaterial3: true,
       ),
-      home: const NodeAssistScreen(), // เรียกใช้หน้าจอที่เราแยกไฟล์ไว้
+      // 🚀 จุดที่เปลี่ยน: สั่งให้แอพเริ่มเปิดที่หน้า LoginScreen แทน
+      home: const LoginScreen(), 
     );
   }
 }

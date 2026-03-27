@@ -1,5 +1,7 @@
 // ไฟล์: lib/screens/node_assist_screen.dart
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import 'login_screen.dart'; 
 
 class NodeAssistScreen extends StatefulWidget {
   const NodeAssistScreen({super.key});
@@ -9,65 +11,125 @@ class NodeAssistScreen extends StatefulWidget {
 }
 
 class _NodeAssistScreenState extends State<NodeAssistScreen> {
-  // --- Page State ---
-  int _currentPhase = 1;
-  Key _autocompleteKey = UniqueKey(); 
+  final _api = ApiService();
 
-  // --- Form State (Phase 1: LSW Access) ---
+  // ─── การนำทาง (Navigation State) ───
+  int _selectedMenuIndex = 0; 
+
+  // ─── ตัวแปร Phase 1 & 2 ───
+  int _currentPhase = 1;
+  Key _autocompleteKey = UniqueKey();
+
   String? selectedNodeId;
   String? selectedNodeName;
   String? selectedAreaGroup;
   String? selectedDomain;
+  int? selectedDomainId;
   String? selectedIpAddress;
   String? selectedModel;
   String? selectedPort;
-  
-  // --- Form State (Phase 2: LSW Network) ---
+
   String? selectedNodeNetworkId;
   String? selectedIpNetwork;
   String? selectedPortNetwork;
+  String _autoFilledSite = 'Pending auto-detection...';
 
-  // 📦 Mock Data 
-  final List<String> mockNodeIds = ['88860', '88005', '99012', '99444', '85001'];
-  final List<String> mockNodeNames = ['Boonrawd Brewery', 'CP All Chiang Mai', 'Boot_Navamin', 'PEA Chonburi', 'BCH_FL21'];
-  List<String> get mockAreaGroups => ['BKK', 'UPC'];
-  
-  final Map<String, List<String>> domainIpMap = {
-    'Domain-A (LSW-CBI-115)': ['10.98.4.113', '10.98.4.18', '10.98.4.82'],
-    'Domain-B (LSW-RBT-100)': ['10.99.200.10', '10.98.4.200'],
-  };
+  // ─── ตัวแปรควบคุมปุ่ม Confirm ───
+  bool _isConnectionTested = false;
 
-  List<String> get mockModels => ['S5700', 'S9700', 'S5200'];
-  List<String> get mockSwitchPorts => ['GE-0/0/1', 'GE-0/0/6', 'GE-0/0/9'];
+  // Data from API
+  List<Map<String, dynamic>> accessNodesRaw = [];
+  List<String> nodeIds = [];
+  List<String> nodeNames = [];
+  List<String> domains = [];
+  List<Map<String, dynamic>> domainRaw = [];
+  List<String> ipList = [];
+  List<String> models = [];
+  List<String> switchPorts = [];
+  List<Map<String, dynamic>> networkNodesRaw = [];
+  List<String> networkNodeNames = [];
+  List<String> networkPorts = [];
 
-  // Mock Data for Phase 2
-  List<String> get mockNodeNetworkIds => ['85001_BCH_FL21', 'Network-Core-A', 'Ring-Bkk-12'];
-  List<String> get mockIpNetworks => ['10.98.4.10/24', '10.100.1.0/24', '192.168.1.0/24'];
-  List<String> get mockPortNetworks => ['GE-0/0/6', 'Core-XG1', 'Uplink-9'];
+  final List<String> areaGroups = ['BKK', 'UPC'];
 
-  // 🧠 Logic Auto-fill Site Location
-  String get autoFilledSite {
-    if (selectedNodeNetworkId == '85001_BCH_FL21') return 'BCH Site - Floor 21';
-    if (selectedNodeNetworkId == 'Network-Core-A') return 'BKK Office - Zone A';
-    if (selectedNodeNetworkId == 'Ring-Bkk-12') return 'CBI Facility - Bldg B';
-    return 'Pending auto-detection...'; 
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
   }
 
-  // Clear Form
+  Future<void> _loadInitialData() async {
+    final nodes        = await _api.fetchAccessNodes();
+    final domainData   = await _api.fetchDomains();
+    final ports        = await _api.fetchAccessInterfaces();
+    final networkNodes = await _api.fetchNetworkNodes();
+    final networkPortData = await _api.fetchNetworkInterfaces();
+
+    setState(() {
+      accessNodesRaw  = List<Map<String, dynamic>>.from(nodes);
+      nodeIds         = nodes.map((n) => n['NodeAcID'].toString()).toList();
+      nodeNames       = nodes.map((n) => n['NodeName'].toString()).toList();
+      domainRaw       = List<Map<String, dynamic>>.from(domainData);
+      domains         = domainData.map((d) => d['Domain_Name'].toString()).toList();
+      switchPorts     = ports.map((p) => p['Interface_Name'].toString()).toList();
+      models          = ports.map((p) => p['Interface_Type'].toString()).toSet().toList();
+      networkNodesRaw = List<Map<String, dynamic>>.from(networkNodes);
+      networkNodeNames = networkNodes.map((n) => n['NodeName'].toString()).toList();
+      networkPorts    = networkPortData.map((p) => p['Interface_Name'].toString()).toList();
+    });
+  }
+
+  Future<void> _loadIpsByDomain(String domainName) async {
+    final domain = domainRaw.firstWhere(
+      (d) => d['Domain_Name'] == domainName,
+      orElse: () => {},
+    );
+    if (domain.isEmpty) return;
+    final id  = domain['Domain_id'] as int;
+    final ips = await _api.fetchIpsByDomain(id);
+    setState(() {
+      selectedDomainId = id;
+      ipList           = ips.map((ip) => ip['IP'].toString()).toList();
+      selectedIpAddress = null;
+    });
+  }
+
+  Future<void> _loadSiteForNetwork(String nodeName) async {
+    if (nodeName.length < 2) {
+      setState(() => _autoFilledSite = 'Pending auto-detection...');
+      return;
+    }
+    final matched = networkNodesRaw.where(
+      (n) => n['NodeName'].toString().toLowerCase().contains(nodeName.toLowerCase())
+    ).toList();
+
+    if (matched.isEmpty) {
+      setState(() => _autoFilledSite = 'Pending auto-detection...');
+      return;
+    }
+
+    final nodeId = matched.first['NodeNwID'] as int;
+    final site   = await _api.fetchSiteForNetworkNode(nodeId);
+    setState(() => _autoFilledSite = site);
+  }
+
   void _clearData() {
     setState(() {
-      selectedNodeId = null;
-      selectedNodeName = null;
-      selectedAreaGroup = null;
-      selectedDomain = null;
-      selectedIpAddress = null;
-      selectedModel = null;
-      selectedPort = null;
+      selectedNodeId        = null;
+      selectedNodeName      = null;
+      selectedAreaGroup     = null;
+      selectedDomain        = null;
+      selectedDomainId      = null;
+      selectedIpAddress     = null;
+      selectedModel         = null;
+      selectedPort          = null;
       selectedNodeNetworkId = null;
-      selectedIpNetwork = null;
-      selectedPortNetwork = null;
-      _currentPhase = 1; 
-      _autocompleteKey = UniqueKey(); 
+      selectedIpNetwork     = null;
+      selectedPortNetwork   = null;
+      _autoFilledSite       = 'Pending auto-detection...';
+      _currentPhase         = 1;
+      _autocompleteKey      = UniqueKey();
+      _isConnectionTested   = false;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('✅ Form cleared successfully'), backgroundColor: Colors.blue),
@@ -75,12 +137,105 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   }
 
   void _submitData() {
+    _isConnectionTested = false; 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.transparent,
-        contentPadding: EdgeInsets.zero,
-        content: _buildDiagramSummary(), // เรียกใช้ฟังก์ชัน Diagram 2 กล่อง
+      barrierDismissible: false, 
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          backgroundColor: Colors.transparent,
+          contentPadding: EdgeInsets.zero,
+          content: _buildDiagramSummary(setStateDialog),
+        ),
+      ),
+    );
+  }
+
+  // ─── ฟังก์ชัน Test Connection (ดึงเฉพาะข้อมูลที่กรอกมาโชว์) ───
+  void _handleTestConnection(StateSetter setStateDialog) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator(color: Colors.greenAccent)),
+    );
+
+    Future.delayed(const Duration(seconds: 1), () {
+      Navigator.pop(context); 
+
+      List<Widget> dynamicDetails = [];
+
+      // ฟังก์ชันช่วยเช็ค ถ้าช่องไหนมีข้อมูลให้เอามาโชว์ (ถ้าเป็นค่าว่างจะไม่แสดง)
+      void addDetail(String label, String? value) {
+        if (value != null && value.trim().isNotEmpty && value != 'Pending auto-detection...') {
+          dynamicDetails.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Text('$label: $value', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            )
+          );
+        }
+      }
+
+      // ดึงข้อมูลจากฟอร์มหน้า 1
+      addDetail('Node ID', selectedNodeId);
+      addDetail('Node Name', selectedNodeName);
+      addDetail('Area Group', selectedAreaGroup);
+      addDetail('Domain', selectedDomain);
+      addDetail('IP Assist', selectedIpAddress);
+      addDetail('Model (LAN Switch)', selectedModel);
+      addDetail('Switch Port', selectedPort);
+
+      // ดึงข้อมูลจากฟอร์มหน้า 2
+      addDetail('Network ID', selectedNodeNetworkId);
+      addDetail('IP Network', selectedIpNetwork);
+      addDetail('Site Location', _autoFilledSite);
+      addDetail('Port Network', selectedPortNetwork);
+
+      // กรณีที่กดเข้ามาแต่ไม่ได้กรอกอะไรเลย
+      if (dynamicDetails.isEmpty) {
+        dynamicDetails.add(
+          const Text('No configuration data provided.', style: TextStyle(color: Colors.white54, fontStyle: FontStyle.italic))
+        );
+      }
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF2B2B2B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white12)),
+          title: const Text('Succeeded', style: TextStyle(color: Color(0xFFA5D63F), fontWeight: FontWeight.bold, fontSize: 24)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            // เอา Ping และ Status ออกแล้ว ยัดแค่ข้อมูลที่เราเช็คไว้ลงไปตรงๆ
+            children: dynamicDetails, 
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx); 
+                setStateDialog(() {
+                  _isConnectionTested = true; 
+                });
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A88C7), foregroundColor: Colors.white),
+              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+            )
+          ],
+        ),
+      );
+    });
+  }
+
+  void _handleLogout() {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child); 
+        },
+        transitionDuration: const Duration(milliseconds: 400),
       ),
     );
   }
@@ -91,7 +246,6 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
       backgroundColor: Theme.of(context).colorScheme.background,
       body: Row(
         children: [
-          // Sidebar
           Container(
             width: 250,
             color: const Color(0xFF212529),
@@ -99,209 +253,85 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  height: 60, width: double.infinity, color: const Color(0xFF1A1D20),
+                  height: 60, width: double.infinity,
+                  color: const Color(0xFF1A1D20),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: const Text('NODE ASSIST PRO', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                  child: const Text('NODE ASSIST PRO',
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
                 ),
-                _buildSidebarItem(Icons.search, 'Search & Reserve', isActive: true),
-                _buildSidebarItem(Icons.settings_ethernet, 'Network Topology'),
-                _buildSidebarItem(Icons.storage, 'Database Overview'),
+                const SizedBox(height: 10),
+                _buildSidebarItem(Icons.search, 'Search & Reserve', 0),
+                _buildSidebarItem(Icons.settings_ethernet, 'Network Topology', 1),
+                _buildSidebarItem(Icons.storage, 'Database Overview', 2),
+                
+                const Spacer(),
+                const Divider(color: Colors.white24),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  child: const Text('Version 1.0.0 (Beta)\nUIH Core Network', 
+                    style: TextStyle(color: Colors.grey, fontSize: 12)),
+                )
               ],
             ),
           ),
-
-          // Main Content
           Expanded(
             child: Column(
               children: [
-                // Top App Bar
                 Container(
                   height: 60, padding: const EdgeInsets.symmetric(horizontal: 24),
-                  decoration: BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('System  >  Node Assist  >  New Reservation', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
-                      const CircleAvatar(radius: 16, backgroundColor: Color(0xFFE8F0FE), child: Icon(Icons.person, size: 20, color: Color(0xFF0056B3))),
-                    ],
-                  ),
-                ),
-
-                // Form Area
-                Expanded(
-                  child: Column(
-                    children: [
-                      // --- Progress Indicator ---
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+                      Text(
+                        _selectedMenuIndex == 0 
+                          ? 'System  >  Node Assist  >  New Reservation'
+                          : _selectedMenuIndex == 1
+                            ? 'System  >  Visualization  >  Network Topology'
+                            : 'System  >  Administration  >  Database Overview',
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 14, fontWeight: FontWeight.w500)
+                      ),
+                      
+                      PopupMenuButton<String>(
+                        offset: const Offset(0, 45),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        onSelected: (value) {
+                          if (value == 'logout') _handleLogout();
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(value: 'profile', child: ListTile(leading: Icon(Icons.person), title: Text('My Profile'), contentPadding: EdgeInsets.zero)),
+                          const PopupMenuItem(value: 'settings', child: ListTile(leading: Icon(Icons.settings), title: Text('Settings'), contentPadding: EdgeInsets.zero)),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(value: 'logout', child: ListTile(leading: Icon(Icons.logout, color: Colors.red), title: Text('Sign Out', style: TextStyle(color: Colors.red)), contentPadding: EdgeInsets.zero)),
+                        ],
                         child: Row(
                           children: [
-                            _buildPhaseIndicator(1, "ข้อมูล LSW Access", _currentPhase >= 1),
-                            Expanded(child: Divider(color: _currentPhase == 2 ? const Color(0xFF0056B3) : Colors.grey.shade300, thickness: 2)),
-                            _buildPhaseIndicator(2, "ข้อมูล LSW Network", _currentPhase == 2),
+                            const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('Admin User', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                Text('Network Engineer', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                              ],
+                            ),
+                            const SizedBox(width: 12),
+                            const CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Color(0xFFE8F0FE),
+                              child: Icon(Icons.person, size: 20, color: Color(0xFF0056B3)),
+                            ),
+                            const Icon(Icons.arrow_drop_down, color: Colors.grey),
                           ],
                         ),
                       ),
-
-                      // --- Content Area ---
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(horizontal: 40),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white, borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey.shade300),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                
-                                // ================= PHASE 1 =================
-                                if (_currentPhase == 1) ...[
-                                  _buildStepHeader('1. ข้อมูล LSW Access'),
-                                  
-                                  Padding(
-                                    padding: const EdgeInsets.all(24.0),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(
-                                          child: _buildSearchField('Search Node ID', 'e.g., 99012', mockNodeIds, selectedNodeId, (val) => setState(() => selectedNodeId = val)),
-                                        ),
-                                        const SizedBox(width: 20),
-                                        Expanded(
-                                          child: _buildSearchField('Search Node Name', 'Type to search name', mockNodeNames, selectedNodeName, (val) => setState(() => selectedNodeName = val)),
-                                        ),
-                                        const SizedBox(width: 20),
-                                        Expanded(
-                                          child: _buildDropdownField('Select Area Group', mockAreaGroups, selectedAreaGroup, (val) => setState(() => selectedAreaGroup = val)),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 24.0, right: 24.0, bottom: 24.0),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: _buildDropdownField('Select Domain', domainIpMap.keys.toList(), selectedDomain, (val) {
-                                              setState(() {
-                                                selectedDomain = val;
-                                                selectedIpAddress = null; 
-                                              });
-                                            }
-                                          ),
-                                        ),
-                                        const SizedBox(width: 20),
-                                        Expanded(
-                                          child: _buildSearchField(
-                                            'Search IP Assist', 'e.g., 10.98.4.200...', 
-                                            selectedDomain != null ? domainIpMap[selectedDomain!]! : [], 
-                                            selectedIpAddress,
-                                            (val) => setState(() => selectedIpAddress = val),
-                                            isDisabled: selectedDomain == null,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 24.0, right: 24.0, bottom: 24.0),
-                                    child: Row(
-                                      children: [
-                                        Expanded(child: _buildDropdownField('Select Model (LAN Switch)', mockModels, selectedModel, (val) => setState(() => selectedModel = val))),
-                                        const SizedBox(width: 20),
-                                        Expanded(child: _buildDropdownField('Select Switch Port', mockSwitchPorts, selectedPort, (val) => setState(() => selectedPort = val))),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-
-                                // ================= PHASE 2 =================
-                                if (_currentPhase == 2) ...[
-                                  _buildStepHeader('2. ข้อมูล LSW Network'),
-                                  Padding(
-                                    padding: const EdgeInsets.all(24.0),
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: _buildSearchField('Search Network ID', 'e.g., 85001_BCH...', mockNodeNetworkIds, selectedNodeNetworkId, (val) => setState(() => selectedNodeNetworkId = val)),
-                                            ),
-                                            const SizedBox(width: 20),
-                                            Expanded(
-                                              child: _buildSearchField('Search IP Network', 'e.g., 10.98.4.10...', mockIpNetworks, selectedIpNetwork, (val) => setState(() => selectedIpNetwork = val)),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 20),
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: _buildReadOnlyField('Site Location (Auto-fill)', autoFilledSite),
-                                            ),
-                                            const SizedBox(width: 20),
-                                            Expanded(
-                                              child: _buildDropdownField('Select Port Network', mockPortNetworks, selectedPortNetwork, (val) => setState(() => selectedPortNetwork = val)),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                
-                                // --- Action Buttons ---
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                                  decoration: BoxDecoration(color: const Color(0xFFF8F9FA), border: Border(top: BorderSide(color: Colors.grey.shade300))),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      if (_currentPhase == 2)
-                                        OutlinedButton.icon(
-                                          onPressed: () => setState(() => _currentPhase = 1),
-                                          icon: const Icon(Icons.arrow_back), label: const Text('Back'),
-                                          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16)),
-                                        )
-                                      else
-                                        TextButton(onPressed: _clearData, child: const Text('Clear Form Data', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))),
-                                      
-                                      if (_currentPhase == 1)
-                                        ElevatedButton.icon(
-                                          onPressed: () => setState(() => _currentPhase = 2),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                          ),
-                                          icon: const Icon(Icons.arrow_forward, size: 20), label: const Text('Next Step', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                        )
-                                      else
-                                        ElevatedButton.icon(
-                                          onPressed: _submitData,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF28A745), foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                          ),
-                                          icon: const Icon(Icons.auto_graph, size: 20), label: const Text('View Topology Diagram', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                        ),
-                                    ],
-                                 ),
-                                )
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 40),
                     ],
                   ),
+                ),
+                Expanded(
+                  child: _buildMainContent(),
                 ),
               ],
             ),
@@ -311,17 +341,339 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     );
   }
 
-  // --- Widget Builders ---
+  Widget _buildMainContent() {
+    switch (_selectedMenuIndex) {
+      case 0: return _buildSearchAndReservePage(); 
+      case 1: return _buildTopologyMockPage(); 
+      case 2: return _buildDatabaseMockPage(); 
+      default: return _buildSearchAndReservePage();
+    }
+  }
+
+  Widget _buildSearchAndReservePage() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+          child: Row(
+            children: [
+              _buildPhaseIndicator(1, "ข้อมูล LSW Access", _currentPhase >= 1),
+              Expanded(child: Divider(
+                color: _currentPhase == 2 ? const Color(0xFF0056B3) : Colors.grey.shade300,
+                thickness: 2)),
+              _buildPhaseIndicator(2, "ข้อมูล LSW Network", _currentPhase == 2),
+            ],
+          ),
+        ),
+
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_currentPhase == 1) ...[
+                    _buildStepHeader('1. ข้อมูล LSW Access'),
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildSearchField(
+                            'Search Node ID', 'e.g., 99012',
+                            nodeIds, selectedNodeId,
+                            (val) => setState(() => selectedNodeId = val))),
+                          const SizedBox(width: 20),
+                          Expanded(child: _buildSearchField(
+                            'Search Node Name', 'Type to search name',
+                            nodeNames, selectedNodeName,
+                            (val) => setState(() => selectedNodeName = val))),
+                          const SizedBox(width: 20),
+                          Expanded(child: _buildDropdownField(
+                            'Select Area Group', areaGroups,
+                            selectedAreaGroup,
+                            (val) => setState(() => selectedAreaGroup = val))),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+                      child: Row(
+                        children: [
+                          Expanded(child: _buildDropdownField(
+                            'Select Domain', domains, selectedDomain,
+                            (val) {
+                              setState(() {
+                                selectedDomain    = val;
+                                selectedIpAddress = null;
+                              });
+                              if (val != null) _loadIpsByDomain(val);
+                            })),
+                          const SizedBox(width: 20),
+                          Expanded(child: _buildSearchField(
+                            'Search IP Assist', 'e.g., 10.98.4.200...',
+                            ipList, selectedIpAddress,
+                            (val) => setState(() => selectedIpAddress = val),
+                            isDisabled: selectedDomain == null)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+                      child: Row(
+                        children: [
+                          Expanded(child: _buildDropdownField(
+                            'Select Model (LAN Switch)', models,
+                            selectedModel,
+                            (val) => setState(() => selectedModel = val))),
+                          const SizedBox(width: 20),
+                          Expanded(child: _buildDropdownField(
+                            'Select Switch Port', switchPorts,
+                            selectedPort,
+                            (val) => setState(() => selectedPort = val))),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  if (_currentPhase == 2) ...[
+                    _buildStepHeader('2. ข้อมูล LSW Network'),
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(child: _buildSearchField(
+                                'Search Network ID', 'e.g., 85001_BCH...',
+                                networkNodeNames, selectedNodeNetworkId,
+                                (val) {
+                                  setState(() => selectedNodeNetworkId = val);
+                                  _loadSiteForNetwork(val);
+                                })),
+                              const SizedBox(width: 20),
+                              Expanded(child: _buildSearchField(
+                                'Search IP Network', 'e.g., 10.98.4.10...',
+                                ipList, selectedIpNetwork,
+                                (val) => setState(() => selectedIpNetwork = val))),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(child: _buildReadOnlyField(
+                                'Site Location (Auto-fill)', _autoFilledSite)),
+                              const SizedBox(width: 20),
+                              Expanded(child: _buildDropdownField(
+                                'Select Port Network', networkPorts,
+                                selectedPortNetwork,
+                                (val) => setState(() => selectedPortNetwork = val))),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F9FA),
+                      border: Border(top: BorderSide(color: Colors.grey.shade300))),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (_currentPhase == 2)
+                          OutlinedButton.icon(
+                            onPressed: () => setState(() => _currentPhase = 1),
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text('Back'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16)),
+                          )
+                        else
+                          TextButton(
+                            onPressed: _clearData,
+                            child: const Text('Clear Form Data',
+                              style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))),
+
+                        if (_currentPhase == 1)
+                          ElevatedButton.icon(
+                            onPressed: () => setState(() => _currentPhase = 2),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0056B3),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            ),
+                            icon: const Icon(Icons.arrow_forward, size: 20),
+                            label: const Text('Next Step',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          )
+                        else
+                          ElevatedButton.icon(
+                            onPressed: _submitData,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF28A745),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            ),
+                            icon: const Icon(Icons.auto_graph, size: 20),
+                            label: const Text('View Topology Diagram',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 40),
+      ],
+    );
+  }
+
+  Widget _buildTopologyMockPage() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.hub_outlined, size: 100, color: Colors.grey.shade300),
+          const SizedBox(height: 20),
+          Text('Interactive Topology Mapper', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
+          const SizedBox(height: 10),
+          Text('Live visualization module is currently under development.\nWill be available in Phase 2 deployment.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade500, fontSize: 16)),
+          const SizedBox(height: 30),
+          ElevatedButton.icon(
+            onPressed: () => setState(() => _selectedMenuIndex = 0),
+            icon: const Icon(Icons.add),
+            label: const Text('Create New Reservation'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDatabaseMockPage() {
+    return Padding(
+      padding: const EdgeInsets.all(40),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Active Network Nodes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Icon(Icons.more_horiz, color: Colors.grey),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                child: DataTable(
+                  headingRowColor: MaterialStateProperty.all(Colors.grey.shade50),
+                  columns: const [
+                    DataColumn(label: Text('NODE ID', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+                    DataColumn(label: Text('NODE NAME', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+                    DataColumn(label: Text('IP ADDRESS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+                    DataColumn(label: Text('STATUS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+                  ],
+                  rows: [
+                    _buildMockDataRow('85001', 'BCH_FL21', '10.98.4.10', true),
+                    _buildMockDataRow('99012', 'PEA Chonburi', '10.98.4.200', true),
+                    _buildMockDataRow('10452', 'Boot_Navamin', '10.100.1.0', false),
+                    _buildMockDataRow('77410', 'Ring-Bkk-12', '192.168.1.0', true),
+                    _buildMockDataRow('55021', 'CBI Facility - Bldg B', '10.99.200.10', true),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  DataRow _buildMockDataRow(String id, String name, String ip, bool isActive) {
+    return DataRow(cells: [
+      DataCell(Text(id, style: const TextStyle(fontWeight: FontWeight.bold))),
+      DataCell(Text(name)),
+      DataCell(Text(ip, style: const TextStyle(color: Colors.blue))),
+      DataCell(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.green.shade50 : Colors.red.shade50,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: isActive ? Colors.green.shade200 : Colors.red.shade200),
+          ),
+          child: Text(isActive ? 'ONLINE' : 'OFFLINE', style: TextStyle(color: isActive ? Colors.green.shade700 : Colors.red.shade700, fontSize: 12, fontWeight: FontWeight.bold)),
+        )
+      ),
+    ]);
+  }
+
+  Widget _buildSidebarItem(IconData icon, String title, int index) {
+    final isActive = _selectedMenuIndex == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedMenuIndex = index),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFF0056B3).withOpacity(0.15) : Colors.transparent,
+          border: Border(left: BorderSide(
+            color: isActive ? const Color(0xFF0056B3) : Colors.transparent, width: 4)),
+        ),
+        child: ListTile(
+          leading: Icon(icon, color: isActive ? Colors.white : Colors.grey.shade400, size: 22),
+          title: Text(title, style: TextStyle(
+            color: isActive ? Colors.white : Colors.grey.shade400,
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPhaseIndicator(int stepNumber, String title, bool isActive) {
     return Row(
       children: [
         Container(
           width: 32, height: 32,
-          decoration: BoxDecoration(color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade300, shape: BoxShape.circle),
-          child: Center(child: Text(stepNumber.toString(), style: TextStyle(color: isActive ? Colors.white : Colors.grey.shade600, fontWeight: FontWeight.bold))),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade300,
+            shape: BoxShape.circle),
+          child: Center(child: Text(stepNumber.toString(),
+            style: TextStyle(
+              color: isActive ? Colors.white : Colors.grey.shade600,
+              fontWeight: FontWeight.bold))),
         ),
         const SizedBox(width: 12),
-        Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade500, fontSize: 16)),
+        Text(title, style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade500,
+          fontSize: 16)),
       ],
     );
   }
@@ -329,22 +681,11 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   Widget _buildStepHeader(String title) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      decoration: BoxDecoration(color: const Color(0xFFF1F5F9), border: Border.symmetric(horizontal: BorderSide(color: Colors.grey.shade300))),
-      child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
-    );
-  }
-
-  Widget _buildSidebarItem(IconData icon, String title, {bool isActive = false}) {
-    return Container(
       decoration: BoxDecoration(
-        color: isActive ? const Color(0xFF0056B3).withOpacity(0.15) : Colors.transparent,
-        border: Border(left: BorderSide(color: isActive ? const Color(0xFF0056B3) : Colors.transparent, width: 4)),
-      ),
-      child: ListTile(
-        leading: Icon(icon, color: isActive ? Colors.white : Colors.grey.shade400, size: 22),
-        title: Text(title, style: TextStyle(color: isActive ? Colors.white : Colors.grey.shade400, fontSize: 14, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
-        onTap: () {},
-      ),
+        color: const Color(0xFFF1F5F9),
+        border: Border.symmetric(horizontal: BorderSide(color: Colors.grey.shade300))),
+      child: Text(title,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
     );
   }
 
@@ -355,17 +696,16 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
         Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
         const SizedBox(height: 8),
         TextFormField(
-          key: ValueKey(value), 
+          key: ValueKey(value),
           initialValue: value,
-          readOnly: true, 
+          readOnly: true,
           style: TextStyle(
-            color: value.contains('Pending') ? Colors.grey : const Color(0xFF0056B3), 
-            fontWeight: FontWeight.bold, 
-            fontSize: 15
+            color: value.contains('Pending') ? Colors.grey : const Color(0xFF0056B3),
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
           ),
           decoration: InputDecoration(
-            filled: true,
-            fillColor: const Color(0xFFE8F0FE), 
+            filled: true, fillColor: const Color(0xFFE8F0FE),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
           ),
@@ -374,80 +714,81 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     );
   }
 
-  Widget _buildSearchField(String label, String hint, List<String> items, String? initialValue, Function(String) onSelected, {bool isDisabled = false}) {
+  Widget _buildSearchField(String label, String hint, List<String> items,
+      String? initialValue, Function(String) onSelected, {bool isDisabled = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isDisabled ? Colors.grey : const Color(0xFF495057))),
+        Text(label, style: TextStyle(
+          fontWeight: FontWeight.bold, fontSize: 13,
+          color: isDisabled ? Colors.grey : const Color(0xFF495057))),
         const SizedBox(height: 8),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            return Autocomplete<String>(
-              key: _autocompleteKey, 
-              initialValue: TextEditingValue(text: initialValue ?? ''),
-              displayStringForOption: (option) => option,
-              optionsBuilder: (TextEditingValue textEditingValue) {
-                if (textEditingValue.text.isEmpty || isDisabled) return const Iterable<String>.empty();
-                return items.where((item) => item.toLowerCase().contains(textEditingValue.text.toLowerCase()));
-              },
-              onSelected: onSelected,
-              fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                return TextField(
-                  controller: controller, 
-                  focusNode: focusNode, 
-                  onChanged: (val) => onSelected(val),
-                  readOnly: isDisabled,
-                  decoration: InputDecoration(
-                    hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400),
-                    filled: true, fillColor: isDisabled ? Colors.grey.shade100 : Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Colors.blue, width: 2)),
-                    suffixIcon: isDisabled ? null : const Icon(Icons.search, color: Colors.grey, size: 20),
-                  ),
-                );
-              },
-              optionsViewBuilder: (context, onSelected, options) {
-                return Align(
-                  alignment: Alignment.topLeft,
-                  child: Material(
-                    elevation: 4,
-                    child: Container(
-                      width: constraints.maxWidth,
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount: options.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          final String option = options.elementAt(index);
-                          return InkWell(
-                            onTap: () => onSelected(option), 
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Text(option),
-                            ),
-                          );
-                        },
-                      ),
+        LayoutBuilder(builder: (context, constraints) {
+          return Autocomplete<String>(
+            key: _autocompleteKey,
+            initialValue: TextEditingValue(text: initialValue ?? ''),
+            displayStringForOption: (option) => option,
+            optionsBuilder: (TextEditingValue textEditingValue) {
+              if (textEditingValue.text.isEmpty || isDisabled) return const Iterable<String>.empty();
+              return items.where((item) =>
+                item.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+            },
+            onSelected: onSelected,
+            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+              return TextField(
+                controller: controller,
+                focusNode: focusNode,
+                onChanged: (val) => onSelected(val),
+                readOnly: isDisabled,
+                decoration: InputDecoration(
+                  hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400),
+                  filled: true, fillColor: isDisabled ? Colors.grey.shade100 : Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Colors.blue, width: 2)),
+                  suffixIcon: isDisabled ? null : const Icon(Icons.search, color: Colors.grey, size: 20),
+                ),
+              );
+            },
+            optionsViewBuilder: (context, onSelected, options) {
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  elevation: 4,
+                  child: Container(
+                    width: constraints.maxWidth,
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final String option = options.elementAt(index);
+                        return InkWell(
+                          onTap: () => onSelected(option),
+                          child: Padding(padding: const EdgeInsets.all(16.0), child: Text(option)),
+                        );
+                      },
                     ),
                   ),
-                );
-              },
-            );
-          }
-        ),
+                ),
+              );
+            },
+          );
+        }),
       ],
     );
   }
 
-  Widget _buildDropdownField(String label, List<String> items, String? currentValue, Function(String?) onChanged) {
+  Widget _buildDropdownField(String label, List<String> items,
+      String? currentValue, Function(String?) onChanged) {
     final validValue = items.contains(currentValue) ? currentValue : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
+        Text(label, style: const TextStyle(
+          fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: validValue,
@@ -458,134 +799,162 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             filled: true, fillColor: Colors.white,
           ),
           icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black),
-          items: items.toSet().toList().map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 15)))).toList(),
+          items: items.toSet().toList().map((e) =>
+            DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 15)))).toList(),
           onChanged: onChanged,
         ),
       ],
     );
   }
 
-  // ⭐️⭐️⭐️ ไฮไลท์: สร้าง Diagram 2 กล่องตามรูปบนกระดาน Whiteboard ⭐️⭐️⭐️
-  Widget _buildDiagramSummary() {
+  Widget _buildDiagramSummary(StateSetter setStateDialog) {
     return Container(
-      width: 750, // ปรับขนาดให้พอดีกับ 2 กล่อง
+      width: 800, 
       padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white, borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min, 
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Network Topology Summary', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF0056B3))),
+              const Text('Network Topology Summary',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF0056B3))),
               IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.grey)),
             ],
           ),
           const SizedBox(height: 10),
           const Divider(thickness: 1),
           const SizedBox(height: 30),
-
-          // Diagram Area
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 📦 กล่องซ้าย: LSW Network (ข้อมูลจาก Phase 2)
               _buildDiagramNode(
-                icon: Icons.dns, // ไอคอน Server/Network
+                icon: Icons.dns,
                 title: 'LSW Network',
-                subTitle: autoFilledSite, // ชื่อ Site
+                subTitle: _autoFilledSite,
                 data: [
                   'ID: ${selectedNodeNetworkId ?? "-"}',
                   'IP: ${selectedIpNetwork ?? "-"}',
+                  '', 
+                  'Domain: ${selectedDomain?.split(' ').first ?? "-"}', 
+                  'Area Group: ${selectedAreaGroup ?? "-"}',
                 ],
               ),
-              
-              // 🔗 เส้นเชื่อมตรงกลาง พร้อมเลข Port หัวท้าย (สีเขียวคล้ายเมจิก)
               _buildDiagramLink(
-                leftPort: selectedPortNetwork ?? 'GE-?', 
-                rightPort: selectedPort ?? 'GE-?'
-              ),
-
-              // 📦 กล่องขวา: LSW Access (ข้อมูลจาก Phase 1)
+                leftPort: selectedPortNetwork ?? 'GE-?',
+                rightPort: selectedPort ?? 'GE-?'),
               _buildDiagramNode(
-                icon: Icons.router, // ไอคอน Switch
+                icon: Icons.router,
                 title: 'LSW Access',
-                subTitle: selectedModel ?? 'Switch Model', // รุ่น S5200
+                subTitle: selectedModel ?? 'Switch Model',
                 data: [
                   'ID: ${selectedNodeId ?? "-"} - ${selectedNodeName ?? "-"}',
                   'IP: ${selectedIpAddress ?? "-"}',
-                  '', // เว้นบรรทัด
-                  'Domain: ${selectedDomain?.split(' ').first ?? "-"}', // โชว์แค่ชื่อ Domain หน้า
+                  '',
+                  'Domain: ${selectedDomain?.split(' ').first ?? "-"}',
                   'Area Group: ${selectedAreaGroup ?? "-"}',
                 ],
                 isFinalNode: true,
               ),
             ],
           ),
-
           const SizedBox(height: 40),
           const Divider(thickness: 1),
           const SizedBox(height: 20),
-
-          // Action Buttons
+          
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Back to Edit', style: TextStyle(color: Colors.grey))),
-              const SizedBox(width: 15),
               ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _clearData();
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Network Configured Successfully!'), backgroundColor: Colors.green));
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF28A745), foregroundColor: Colors.white),
-                icon: const Icon(Icons.check_circle, size: 20),
-                label: const Text('Confirm Configuration', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                onPressed: () => _handleTestConnection(setStateDialog),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF17A2B8),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))
+                ),
+                icon: const Icon(Icons.wifi_protected_setup, size: 20),
+                label: const Text('Test Connection', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              ),
+
+              Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      side: BorderSide(color: Colors.grey.shade400)
+                    ),
+                    child: const Text('Back to Edit', style: TextStyle(color: Colors.grey))
+                  ),
+                  const SizedBox(width: 15),
+                  
+                  ElevatedButton.icon(
+                    onPressed: _isConnectionTested ? () {
+                      Navigator.pop(context); 
+                      _clearData();           
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ Network Configured Successfully!'),
+                          backgroundColor: Colors.green));
+                    } : null, 
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isConnectionTested ? const Color(0xFF28A745) : Colors.grey.shade300, 
+                      foregroundColor: _isConnectionTested ? Colors.white : Colors.grey.shade500,
+                      disabledBackgroundColor: Colors.grey.shade300,
+                      disabledForegroundColor: Colors.grey.shade500,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))
+                    ),
+                    icon: const Icon(Icons.check_circle, size: 20),
+                    label: const Text('Confirm Configuration',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ],
               ),
             ],
-          )
-        ],
-      ),
-    );
-  }
-
-  // สร้างกล่อง (Node) บน Diagram
-  Widget _buildDiagramNode({required IconData icon, required String title, required String subTitle, required List<String> data, bool isFinalNode = false}) {
-    return Container(
-      width: 250,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white, 
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isFinalNode ? const Color(0xFF0056B3) : Colors.teal.shade600, width: 2), // สีขอบกล่องต่างกัน
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5, offset: const Offset(0, 2))],
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 40, color: isFinalNode ? const Color(0xFF0056B3) : Colors.teal.shade600),
-          const SizedBox(height: 10),
-          Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isFinalNode ? const Color(0xFF0056B3) : Colors.teal.shade700), textAlign: TextAlign.center),
-          Text(subTitle, style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.center),
-          const SizedBox(height: 15),
-          const Divider(thickness: 1),
-          const SizedBox(height: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: data.map((item) => Text(item, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500), textAlign: TextAlign.left)).toList(),
           ),
         ],
       ),
     );
   }
 
-  // สร้างเส้นเชื่อมโยง (Link) ตรงกลาง พร้อมชื่อ Port
+  Widget _buildDiagramNode({required IconData icon, required String title,
+      required String subTitle, required List<String> data, bool isFinalNode = false}) {
+    return Container(
+      width: 250, padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white, borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isFinalNode ? const Color(0xFF0056B3) : Colors.teal.shade600, width: 2),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 40, color: isFinalNode ? const Color(0xFF0056B3) : Colors.teal.shade600),
+          const SizedBox(height: 10),
+          Text(title, style: TextStyle(
+            fontWeight: FontWeight.bold, fontSize: 18,
+            color: isFinalNode ? const Color(0xFF0056B3) : Colors.teal.shade700),
+            textAlign: TextAlign.center),
+          Text(subTitle, style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.center),
+          const SizedBox(height: 15),
+          const Divider(thickness: 1),
+          const SizedBox(height: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: data.map((item) =>
+              Text(item, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDiagramLink({required String leftPort, required String rightPort}) {
     return Expanded(
       child: Padding(
@@ -600,10 +969,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
               ],
             ),
             const SizedBox(height: 4),
-            Container(
-              height: 3,
-              color: Colors.teal.shade300, // สีเส้นเขียวอมฟ้าคล้ายปากกาไวท์บอร์ด
-            ),
+            Container(height: 3, color: Colors.teal.shade300),
           ],
         ),
       ),

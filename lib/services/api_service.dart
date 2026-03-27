@@ -1,34 +1,98 @@
 // ไฟล์: lib/services/api_service.dart
 import 'dart:convert';
-// import 'package:http/http.dart' as http; // (เดี๋ยวตอนเชื่อมจริงเราจะเปิดใช้ตัวนี้)
+import 'package:http/http.dart' as http;
 
 class ApiService {
-  // สมมติ URL API ของบริษัท
-  static const String baseUrl = 'https://api.yourcompany.com/v1';
+  static const String baseUrl = 'http://localhost:8000/api/v1';
 
-  // ตัวอย่างฟังก์ชันดึงข้อมูลจำลอง
-  Future<List<Map<String, dynamic>>> fetchNodes() async {
-    try {
-      await Future.delayed(const Duration(seconds: 1)); // จำลองการโหลด
-      return [
-        {"id": "88860", "name": "บุญรอดบริวเวอรี่ คลังบางบัวทอง", "area": "BKK"},
-        {"id": "99102", "name": "CP All สาขาเชียงใหม่", "area": "UPC"},
-      ];
-    } catch (e) {
-      print("Error fetching nodes: $e");
-      return [];
+  // ─── Access Nodes ───
+  Future<List<Map<String, dynamic>>> fetchAccessNodes({String? search}) async {
+    final uri = Uri.parse('$baseUrl/access-nodes')
+        .replace(queryParameters: search != null ? {'search': search} : null);
+    final res = await http.get(uri);
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
     }
+    return [];
   }
 
-  // ตัวอย่างฟังก์ชันส่งข้อมูลบันทึกลง Database
-  Future<bool> submitReservation(Map<String, dynamic> payload) async {
-    try {
-      print("กำลังส่งข้อมูลเข้า Database: $payload");
-      await Future.delayed(const Duration(seconds: 1));
-      return true; 
-    } catch (e) {
-      print("Error submitting: $e");
-      return false;
+  // ─── Network Nodes ───
+  Future<List<Map<String, dynamic>>> fetchNetworkNodes({String? search}) async {
+    final uri = Uri.parse('$baseUrl/network-nodes')
+        .replace(queryParameters: search != null ? {'search': search} : null);
+    final res = await http.get(uri);
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
     }
+    return [];
+  }
+
+  // ─── Site auto-fill ───
+  Future<String> fetchSiteForNetworkNode(int nodeId) async {
+    final res = await http.get(Uri.parse('$baseUrl/network-nodes/$nodeId/site'));
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return data['site_location'] ?? '-';
+    }
+    return '-';
+  }
+
+  // ─── Domains ───
+  Future<List<Map<String, dynamic>>> fetchDomains() async {
+    final res = await http.get(Uri.parse('$baseUrl/domains'));
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  // ─── IPs by Domain ───
+  Future<List<Map<String, dynamic>>> fetchIpsByDomain(int domainId) async {
+    final res = await http.get(Uri.parse('$baseUrl/domains/$domainId/ips'));
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  // ─── Access Interfaces ───
+  Future<List<Map<String, dynamic>>> fetchAccessInterfaces({int? switchId}) async {
+    final uri = Uri.parse('$baseUrl/access-interfaces').replace(
+        queryParameters: switchId != null ? {'switch_id': '$switchId'} : null);
+    final res = await http.get(uri);
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  // ─── Network Interfaces ───
+  Future<List<Map<String, dynamic>>> fetchNetworkInterfaces({int? switchId}) async {
+    final uri = Uri.parse('$baseUrl/network-interfaces').replace(
+        queryParameters: switchId != null ? {'switch_id': '$switchId'} : null);
+    final res = await http.get(uri);
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  // ─── Submit Reservation ───
+  Future<bool> submitReservation(Map<String, dynamic> payload) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/connections'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+    return res.statusCode == 201;
+  }
+
+  // ─── Topology ───
+  Future<Map<String, dynamic>?> fetchTopology(int connectionId) async {
+    final res = await http.get(Uri.parse('$baseUrl/connections/$connectionId/topology'));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body);
+    }
+    return null;
   }
 }
