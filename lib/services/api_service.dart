@@ -77,6 +77,28 @@ class ApiService {
     return [];
   }
 
+  // ─── Model Interfaces (Port Templates) ───
+  Future<List<Map<String, dynamic>>> fetchModelInterfaces({int? modelId}) async {
+    final uri = Uri.parse('$baseUrl/model-interfaces').replace(
+        queryParameters: modelId != null ? {'model_id': '$modelId'} : null);
+    final res = await http.get(uri);
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  // ─── Models ───
+  Future<List<Map<String, dynamic>>> fetchModels({String? modelType}) async {
+    final uri = Uri.parse('$baseUrl/models').replace(
+        queryParameters: modelType != null ? {'model_type': modelType} : null);
+    final res = await http.get(uri);
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
   // ─── Submit Reservation ───
   Future<bool> submitReservation(Map<String, dynamic> payload) async {
     final res = await http.post(

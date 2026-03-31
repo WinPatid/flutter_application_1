@@ -18,17 +18,33 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
 
   // ─── ตัวแปร Phase 1 & 2 (สำหรับหน้าฟอร์ม) ───
   int _currentPhase = 1;
-  Key _autocompleteKey = UniqueKey();
+  // แยก key สำหรับแต่ละ field เพื่อไม่ให้ reset พร้อมกัน
+  Key _keyNodeId       = UniqueKey();
+  Key _keyNodeName     = UniqueKey();
+  Key _keyDomain       = UniqueKey();
+  Key _keyIpAccess     = UniqueKey();
+  Key _keyModel        = UniqueKey();
+  Key _keyPort         = UniqueKey();
+  Key _keyNetworkNode  = UniqueKey();
+  Key _keyIpNetwork    = UniqueKey();
+  Key _keyPortNetwork  = UniqueKey();
 
   String? selectedNodeId;
+  int? selectedNodeAcID;        // FK → LSW_Access.NodeAcID
   String? selectedNodeName;
   String? selectedAreaGroup;
   String? selectedDomain;
   int? selectedDomainId;
   String? selectedIpAddress;
+  int? selectedIpAccessId;      // FK → ip.IP_id (Access side)
   String? selectedModel;
   String? selectedPort;
+  int? selectedPortAccessId;    // FK → InterfacesAc.Interface_ID (สร้างตอน confirm)
+  int? selectedSwitchAcId;      // FK → SwitchAc.SwitchAc_ID (สร้างตอน confirm)
+  int? selectedTemplateId;      // FK → ModelInterfaces.Template_ID
+  int? selectedModelId;         // Model.Model_Id
 
+<<<<<<< HEAD
   // ตัวแปร Phase 2 ที่ปรับปรุงใหม่
   String? selectedSiteCode; 
   String? selectedSiteName;
@@ -60,14 +76,37 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   ];
 
   // Data from API (สำหรับฟอร์ม)
+=======
+  String? selectedNodeNetworkId;
+  int? selectedNodeNwID;        // FK → LSW_Network.NodeNwID
+  String? selectedIpNetwork;
+  int? selectedIpNetworkId;     // FK → ip.IP_id (Network side)
+  String? selectedPortNetwork;
+  int? selectedPortNetworkId;   // FK → interfaces_nw.Interface_ID
+  int? selectedSwitchNwId;      // FK → switch_nw.SwitchNw_ID
+  String _autoFilledSite = 'Pending auto-detection...';
+
+  // raw data สำหรับ lookup ID ทีหลัง
+  List<Map<String, dynamic>> accessPortsRaw = [];
+  List<Map<String, dynamic>> networkPortsRaw = [];
+  List<Map<String, dynamic>> accessSwitchesRaw = [];
+  List<Map<String, dynamic>> networkSwitchesRaw = [];
+  List<Map<String, dynamic>> ipRaw = [];
+
+  // ─── ตัวแปรควบคุมปุ่ม Confirm ───
+  bool _isConnectionTested = false;
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
   List<Map<String, dynamic>> accessNodesRaw = [];
   List<String> nodeIds = [];
   List<String> nodeNames = [];
   List<String> domains = [];
   List<Map<String, dynamic>> domainRaw = [];
-  List<String> ipList = [];
+  List<String> ipList = [];        // IP list สำหรับ Access side
+  List<String> ipNetworkList = []; // IP list สำหรับ Network side (แยกกัน)
   List<String> models = [];
+  List<Map<String, dynamic>> modelsRaw = [];
   List<String> switchPorts = [];
+<<<<<<< HEAD
 
   // ─── ข้อมูลจำลองสำหรับ Site Code & Name (จากรูป) ───
   final List<Map<String, String>> mockSites = [
@@ -79,6 +118,13 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
 
   List<String> get siteCodes => mockSites.map((e) => e['code']!).toList();
   List<String> get siteNames => mockSites.map((e) => e['name']!).toSet().toList(); // toSet ป้องกันชื่อซ้ำ
+=======
+  List<String> filteredSwitchPorts = []; // กรองตาม Model ที่เลือก
+  List<Map<String, dynamic>> templatePortsRaw = []; // Port templates จาก ModelInterfaces
+  List<Map<String, dynamic>> networkNodesRaw = [];
+  List<String> networkNodeNames = [];
+  List<String> networkPorts = [];
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
 
   final List<String> areaGroups = ['BKK', 'UPC'];
 
@@ -89,6 +135,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   }
 
   Future<void> _loadInitialData() async {
+<<<<<<< HEAD
     final nodes = await _api.fetchAccessNodes();
     final domainData = await _api.fetchDomains();
     final ports = await _api.fetchAccessInterfaces();
@@ -101,6 +148,41 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
       domains = domainData.map((d) => d['Domain_Name'].toString()).toList();
       switchPorts = ports.map((p) => p['Interface_Name'].toString()).toList();
       models = ports.map((p) => p['Interface_Type'].toString()).toSet().toList();
+=======
+    final nodes           = await _api.fetchAccessNodes();
+    final domainData      = await _api.fetchDomains();
+    final ports           = await _api.fetchAccessInterfaces();
+    final networkNodes    = await _api.fetchNetworkNodes();
+    final networkPortData = await _api.fetchNetworkInterfaces();
+    final modelData       = await _api.fetchModels();
+
+    setState(() {
+      accessNodesRaw      = List<Map<String, dynamic>>.from(nodes);
+      nodeIds             = nodes.map((n) => n['NodeAcID'].toString()).toList();
+      nodeNames           = nodes.map((n) => n['NodeName'].toString()).toList();
+      domainRaw           = List<Map<String, dynamic>>.from(domainData);
+      domains             = domainData.map((d) => d['Domain_Name'].toString()).toList();
+      accessPortsRaw      = List<Map<String, dynamic>>.from(ports);
+      switchPorts         = ports.map((p) => p['Interface_Name'].toString()).toList();
+      filteredSwitchPorts = List.from(switchPorts);
+      modelsRaw           = List<Map<String, dynamic>>.from(modelData);
+      models              = modelData.map((m) => m['Model_Name'].toString()).toList();
+      networkNodesRaw     = List<Map<String, dynamic>>.from(networkNodes);
+      networkNodeNames    = networkNodes.map((n) => n['NodeName'].toString()).toList();
+      networkPortsRaw     = List<Map<String, dynamic>>.from(networkPortData);
+      networkPorts        = networkPortData.map((p) => p['Interface_Name'].toString()).toList();
+    });
+  }
+
+  Future<void> _loadPortsByModel(int modelId) async {
+    final templates = await _api.fetchModelInterfaces(modelId: modelId);
+    setState(() {
+      templatePortsRaw    = List<Map<String, dynamic>>.from(templates);
+      filteredSwitchPorts = templates.map((t) => t['Interface_Name'].toString()).toList();
+      selectedPort        = null;
+      selectedTemplateId  = null;
+      _keyPort            = UniqueKey();
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
     });
   }
 
@@ -113,14 +195,28 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     final id = domain['Domain_id'] as int;
     final ips = await _api.fetchIpsByDomain(id);
     setState(() {
+<<<<<<< HEAD
       selectedDomainId = id;
       ipList = ips.map((ip) => ip['IP'].toString()).toList();
       selectedIpAddress = null;
+=======
+      selectedDomainId    = id;
+      ipRaw               = List<Map<String, dynamic>>.from(ips);
+      ipList              = ips.map((ip) => ip['IP'].toString()).toList();
+      ipNetworkList       = List.from(ipList); // Network ใช้ IP จาก domain เดียวกัน
+      selectedIpAddress   = null;
+      selectedIpAccessId  = null;
+      selectedIpNetwork   = null;
+      selectedIpNetworkId = null;
+      _keyIpAccess  = UniqueKey();
+      _keyIpNetwork = UniqueKey();
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
     });
   }
 
   void _clearData() {
     setState(() {
+<<<<<<< HEAD
       selectedNodeId = null;
       selectedNodeName = null;
       selectedAreaGroup = null;
@@ -141,6 +237,47 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
       _currentPhase = 1;
       _autocompleteKey = UniqueKey();
       _isConnectionTested = false;
+=======
+      selectedNodeId        = null;
+      selectedNodeAcID      = null;
+      selectedNodeName      = null;
+      selectedAreaGroup     = null;
+      selectedDomain        = null;
+      selectedDomainId      = null;
+      selectedIpAddress     = null;
+      selectedIpAccessId    = null;
+      selectedModel         = null;
+      selectedPort          = null;
+      selectedPortAccessId  = null;
+      selectedSwitchAcId    = null;
+      selectedTemplateId    = null;
+      selectedModelId       = null;
+      templatePortsRaw      = [];
+      filteredSwitchPorts   = List.from(switchPorts);
+      selectedNodeNetworkId = null;
+      selectedNodeNwID      = null;
+      selectedIpNetwork     = null;
+      selectedIpNetworkId   = null;
+      selectedPortNetwork   = null;
+      selectedPortNetworkId = null;
+      selectedSwitchNwId    = null;
+      ipRaw                 = [];
+      ipList                = [];
+      ipNetworkList         = [];
+      _autoFilledSite       = 'Pending auto-detection...';
+      _currentPhase         = 1;
+      _isConnectionTested   = false;
+      // reset ทุก key แยกกันเพื่อ clear เฉพาะ field
+      _keyNodeId      = UniqueKey();
+      _keyNodeName    = UniqueKey();
+      _keyDomain      = UniqueKey();
+      _keyIpAccess    = UniqueKey();
+      _keyModel       = UniqueKey();
+      _keyPort        = UniqueKey();
+      _keyNetworkNode = UniqueKey();
+      _keyIpNetwork   = UniqueKey();
+      _keyPortNetwork = UniqueKey();
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('✅ Form cleared successfully'), backgroundColor: Colors.blue),
@@ -566,6 +703,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+<<<<<<< HEAD
                           Expanded(child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -648,11 +786,25 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                               }),
                             ],
                           )),
+=======
+                          Expanded(child: _buildSearchField(
+                            'Search Node ID', 'e.g., 99012',
+                            nodeIds, selectedNodeId,
+                            (val) {
+                              final node = accessNodesRaw.firstWhere(
+                                (n) => n['NodeAcID'].toString() == val, orElse: () => {});
+                              setState(() {
+                                selectedNodeId   = val;
+                                selectedNodeAcID = node.isNotEmpty ? node['NodeAcID'] as int : null;
+                              });
+                            }, fieldKey: _keyNodeId)),
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
                           const SizedBox(width: 20),
                           Expanded(child: _buildSearchField(
                             'Search Node Name', 'Type to search name',
                             nodeNames, selectedNodeName,
-                            (val) => setState(() => selectedNodeName = val))),
+                            (val) => setState(() => selectedNodeName = val),
+                            fieldKey: _keyNodeName)),
                           const SizedBox(width: 20),
                           Expanded(child: _buildDropdownField(
                             'Select Area Group', areaGroups,
@@ -665,21 +817,42 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                       padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
                       child: Row(
                         children: [
-                          Expanded(child: _buildDropdownField(
-                            'Select Domain', domains, selectedDomain,
+                          Expanded(child: _buildSearchField(
+                            'Select Domain', 'Type to search domain...',
+                            domains, selectedDomain,
                             (val) {
                               setState(() {
+<<<<<<< HEAD
                                 selectedDomain = val;
                                 selectedIpAddress = null;
+=======
+                                selectedDomain      = val;
+                                selectedIpAddress   = null;
+                                selectedIpAccessId  = null;
+                                selectedIpNetwork   = null;
+                                selectedIpNetworkId = null;
+                                ipList              = [];
+                                ipNetworkList       = [];
+                                ipRaw               = [];
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
                               });
-                              if (val != null) _loadIpsByDomain(val);
-                            })),
+                              final matched = domainRaw.firstWhere(
+                                (d) => d['Domain_Name'].toString() == val, orElse: () => {});
+                              if (matched.isNotEmpty) _loadIpsByDomain(val);
+                            }, fieldKey: _keyDomain, showAllOnEmpty: true)),
                           const SizedBox(width: 20),
                           Expanded(child: _buildSearchField(
                             'Search IP Assist', 'e.g., 10.98.4.200...',
                             ipList, selectedIpAddress,
-                            (val) => setState(() => selectedIpAddress = val),
-                            isDisabled: selectedDomain == null)),
+                            (val) {
+                              final ip = ipRaw.firstWhere(
+                                (i) => i['IP'].toString() == val, orElse: () => {});
+                              setState(() {
+                                selectedIpAddress  = val;
+                                selectedIpAccessId = ip.isNotEmpty ? ip['IP_id'] as int : null;
+                              });
+                            },
+                            isDisabled: selectedDomain == null, fieldKey: _keyIpAccess)),
                         ],
                       ),
                     ),
@@ -687,15 +860,41 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                       padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
                       child: Row(
                         children: [
-                          Expanded(child: _buildDropdownField(
-                            'Select Model (LAN Switch)', models,
-                            selectedModel,
-                            (val) => setState(() => selectedModel = val))),
+                          Expanded(child: _buildSearchField(
+                            'Select Model (LAN Switch)', 'Type to search model...',
+                            models, selectedModel,
+                            (val) {
+                              final model = modelsRaw.firstWhere(
+                                (m) => m['Model_Name'].toString() == val, orElse: () => {});
+                              final modelId = model.isNotEmpty ? model['Model_Id'] as int : null;
+                              setState(() {
+                                selectedModel   = val;
+                                selectedModelId = modelId;
+                                selectedPort    = null;
+                                selectedTemplateId  = null;
+                                selectedPortAccessId = null;
+                                selectedSwitchAcId   = null;
+                                filteredSwitchPorts  = [];
+                              });
+                              if (modelId != null) _loadPortsByModel(modelId);
+                            }, fieldKey: _keyModel)),
                           const SizedBox(width: 20),
-                          Expanded(child: _buildDropdownField(
-                            'Select Switch Port', switchPorts,
-                            selectedPort,
-                            (val) => setState(() => selectedPort = val))),
+                          Expanded(child: _buildSearchField(
+                            'Select Switch Port', 'Type to search port...',
+                            filteredSwitchPorts, selectedPort,
+                            (val) {
+                              // ดึงจาก templatePortsRaw แทน accessPortsRaw
+                              final tmpl = templatePortsRaw.firstWhere(
+                                (t) => t['Interface_Name'].toString() == val, orElse: () => {});
+                              setState(() {
+                                selectedPort       = val;
+                                selectedTemplateId = tmpl.isNotEmpty ? tmpl['Template_ID'] as int : null;
+                                // SwitchAc_ID และ Interface_ID จะสร้างตอน confirm
+                                selectedPortAccessId = null;
+                                selectedSwitchAcId   = null;
+                              });
+                            },
+                            isDisabled: selectedModel == null, fieldKey: _keyPort, showAllOnEmpty: true)),
                         ],
                       ),
                     ),
@@ -712,6 +911,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                           Row(
                             children: [
                               Expanded(child: _buildSearchField(
+<<<<<<< HEAD
                                 'Search Site Code LSW', 'e.g., BCH-5012-UR',
                                 siteCodes, selectedSiteCode, 
                                 (val) => setState(() {
@@ -736,6 +936,53 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                                   _tempSelectedPorts.clear(); 
                                   _tempIpNetworks.clear();
                                 }))),
+=======
+                                'Search Network ID', 'e.g., 85001_BCH...',
+                                networkNodeNames, selectedNodeNetworkId,
+                                (val) {
+                                  final node = networkNodesRaw.firstWhere(
+                                    (n) => n['NodeName'].toString() == val, orElse: () => {});
+                                  setState(() {
+                                    selectedNodeNetworkId = val;
+                                    selectedNodeNwID      = node.isNotEmpty ? node['NodeNwID'] as int : null;
+                                  });
+                                  _loadSiteForNetwork(val);
+                                }, fieldKey: _keyNetworkNode)),
+                              const SizedBox(width: 20),
+                              Expanded(child: _buildSearchField(
+                                'Search IP Network', 'e.g., 10.98.4.10...',
+                                ipNetworkList, selectedIpNetwork,
+                                (val) {
+                                  final ip = ipRaw.firstWhere(
+                                    (i) => i['IP'].toString() == val, orElse: () => {});
+                                  setState(() {
+                                    selectedIpNetwork   = val;
+                                    selectedIpNetworkId = ip.isNotEmpty ? ip['IP_id'] as int : null;
+                                  });
+                                },
+                                isDisabled: selectedDomain == null,
+                                fieldKey: _keyIpNetwork)),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(child: _buildReadOnlyField(
+                                'Site Location (Auto-fill)', _autoFilledSite)),
+                              const SizedBox(width: 20),
+                              Expanded(child: _buildSearchField(
+                                'Select Port Network', 'Type to search port...',
+                                networkPorts, selectedPortNetwork,
+                                (val) {
+                                  final port = networkPortsRaw.firstWhere(
+                                    (p) => p['Interface_Name'].toString() == val, orElse: () => {});
+                                  setState(() {
+                                    selectedPortNetwork   = val;
+                                    selectedPortNetworkId = port.isNotEmpty ? port['Interface_ID'] as int : null;
+                                    selectedSwitchNwId    = port.isNotEmpty ? port['SwitchNw_ID'] as int : null;
+                                  });
+                                }, fieldKey: _keyPortNetwork)),
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
                             ],
                           ),
                           
@@ -1059,7 +1306,8 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   }
 
   Widget _buildSearchField(String label, String hint, List<String> items,
-      String? initialValue, Function(String) onSelected, {bool isDisabled = false}) {
+      String? initialValue, Function(String) onSelected,
+      {bool isDisabled = false, Key? fieldKey, bool showAllOnEmpty = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1069,20 +1317,33 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
         const SizedBox(height: 8),
         LayoutBuilder(builder: (context, constraints) {
           return Autocomplete<String>(
-            key: _autocompleteKey,
+            key: fieldKey,
             initialValue: TextEditingValue(text: initialValue ?? ''),
             displayStringForOption: (option) => option,
             optionsBuilder: (TextEditingValue textEditingValue) {
-              if (textEditingValue.text.isEmpty || isDisabled) return const Iterable<String>.empty();
+              if (isDisabled) return const Iterable<String>.empty();
+              if (textEditingValue.text.isEmpty) {
+                return showAllOnEmpty ? items : const Iterable<String>.empty();
+              }
               return items.where((item) =>
                 item.toLowerCase().contains(textEditingValue.text.toLowerCase()));
             },
             onSelected: onSelected,
             fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+              if (showAllOnEmpty) {
+                focusNode.addListener(() {
+                  if (focusNode.hasFocus) {
+                    final text = controller.text;
+                    controller.value = controller.value.copyWith(
+                      text: text,
+                      selection: TextSelection.collapsed(offset: text.length),
+                    );
+                  }
+                });
+              }
               return TextField(
                 controller: controller,
                 focusNode: focusNode,
-                onChanged: (val) => onSelected(val),
                 readOnly: isDisabled,
                 decoration: InputDecoration(
                   hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400),
@@ -1099,19 +1360,30 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
               return Align(
                 alignment: Alignment.topLeft,
                 child: Material(
-                  elevation: 4,
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(4),
                   child: Container(
                     width: constraints.maxWidth,
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    child: ListView.builder(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: ListView.separated(
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
                       itemCount: options.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
                       itemBuilder: (BuildContext context, int index) {
                         final String option = options.elementAt(index);
                         return InkWell(
                           onTap: () => onSelected(option),
-                          child: Padding(padding: const EdgeInsets.all(16.0), child: Text(option)),
+                          hoverColor: const Color(0xFFE8F0FE),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Text(option, style: const TextStyle(fontSize: 14)),
+                          ),
                         );
                       },
                     ),
@@ -1239,6 +1511,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                   const SizedBox(width: 15),
                   
                   ElevatedButton.icon(
+<<<<<<< HEAD
                     onPressed: _isConnectionTested ? () {
                       Navigator.pop(context);
                       _clearData();
@@ -1247,6 +1520,45 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                           content: Text('✅ Network Configured Successfully!'),
                           backgroundColor: Colors.green));
                     } : null,
+=======
+                    onPressed: _isConnectionTested ? () async {
+                      // ── Validate ──
+                      if (selectedNodeAcID == null || selectedTemplateId == null ||
+                          selectedIpAccessId == null || selectedModelId == null ||
+                          selectedNodeNwID == null || selectedPortNetworkId == null ||
+                          selectedIpNetworkId == null || selectedSwitchNwId == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('❌ กรุณากรอกข้อมูลให้ครบก่อน Confirm'), backgroundColor: Colors.red));
+                        return;
+                      }
+
+                      final payload = {
+                        'access_node_id':     selectedNodeAcID,
+                        'access_switch_id':   0,              // backend สร้างใหม่
+                        'access_port_id':     0,              // backend สร้างจาก template
+                        'access_ip_id':       selectedIpAccessId,
+                        'access_template_id': selectedTemplateId,
+                        'access_model_id':    selectedModelId,
+                        'network_node_id':    selectedNodeNwID,
+                        'network_switch_id':  selectedSwitchNwId,
+                        'network_port_id':    selectedPortNetworkId,
+                        'network_ip_id':      selectedIpNetworkId,
+                        'status':             'planned',
+                      };
+
+                      final ok = await _api.submitReservation(payload);
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      if (ok) {
+                        _clearData();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('✅ Network Configured Successfully!'), backgroundColor: Colors.green));
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('❌ บันทึกไม่สำเร็จ กรุณาตรวจสอบข้อมูล'), backgroundColor: Colors.red));
+                      }
+                    } : null, 
+>>>>>>> b3399458380ba2b12c9f6ce1d8f8df6718a6ad17
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isConnectionTested ? const Color(0xFF28A745) : Colors.grey.shade300,
                       foregroundColor: _isConnectionTested ? Colors.white : Colors.grey.shade500,
