@@ -17,9 +17,11 @@ class ApiService {
   }
 
   // ─── Network Nodes ───
-  Future<List<Map<String, dynamic>>> fetchNetworkNodes({String? search}) async {
-    final uri = Uri.parse('$baseUrl/network-nodes')
-        .replace(queryParameters: search != null ? {'search': search} : null);
+  Future<List<Map<String, dynamic>>> fetchNetworkNodes({String? search, String? siteCode}) async {
+    final params = <String, String>{};
+    if (search != null) params['search'] = search;
+    if (siteCode != null) params['site_code'] = siteCode;
+    final uri = Uri.parse('$baseUrl/network-nodes').replace(queryParameters: params.isEmpty ? null : params);
     final res = await http.get(uri);
     if (res.statusCode == 200) {
       return List<Map<String, dynamic>>.from(jsonDecode(res.body));
@@ -35,6 +37,15 @@ class ApiService {
       return data['site_location'] ?? '-';
     }
     return '-';
+  }
+
+  // ─── Sites ───
+  Future<List<Map<String, dynamic>>> fetchSites() async {
+    final res = await http.get(Uri.parse('$baseUrl/sites'));
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
   }
 
   // ─── Domains ───

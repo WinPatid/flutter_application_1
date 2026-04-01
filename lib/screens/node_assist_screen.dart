@@ -48,7 +48,6 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
 
   // ─── Phase 2: Network ───
   String? selectedSiteCode;
-  String? selectedSiteName;
   String? selectedNodeNetworkId;
   int?    selectedNodeNwID;
   String? selectedIpNetwork;
@@ -90,19 +89,14 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   List<String> models         = [];
   List<String> filteredSwitchPorts            = [];
   List<Map<String, dynamic>> templatePortsRaw = [];
-  List<Map<String, dynamic>> networkNodesRaw  = [];
+  List<Map<String, dynamic>> networkNodesRaw  = [];  // โหลดเฉพาะตอนเลือก site
   List<Map<String, dynamic>> networkPortsRaw  = [];
   List<String> networkPorts   = [];
+  bool _isLoadingNodes = false;
 
-  // ─── Site mock data ───
-  final List<Map<String, String>> mockSites = [
-    {'code': 'AYA-5024-UR', 'name': 'ประตูน้ำพระอินทร์ (UIH)'},
-    {'code': 'BCH-5012-UR', 'name': 'True IDC เมืองทองธานี ชั้น 8 (Data Center) Rack 5G05A'},
-    {'code': 'BCH-5013-UR', 'name': 'Jastel ชั้น 6 (Data Center)'},
-    {'code': 'BCH-5018-UR', 'name': 'SBN แจ้งวัฒนะ (Data Center)'},
-  ];
-  List<String> get siteCodes => mockSites.map((e) => e['code']!).toList();
-  List<String> get siteNames => mockSites.map((e) => e['name']!).toSet().toList();
+  // ─── Site data (จาก API) ───
+  List<Map<String, dynamic>> sitesRaw = [];
+  List<String> get siteCodes => sitesRaw.map((e) => e['Site_code'].toString()).toList();
 
   final List<String> areaGroups = ['BKK', 'UPC'];
 
@@ -117,23 +111,45 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    final nodes           = await _api.fetchAccessNodes();
-    final domainData      = await _api.fetchDomains();
-    final modelData       = await _api.fetchModels();
-    final networkNodes    = await _api.fetchNetworkNodes();
-    final networkPortData = await _api.fetchNetworkInterfaces();
+    // โหลด parallel เฉพาะข้อมูลที่ต้องใช้ตอน init
+    final results = await Future.wait([
+      _api.fetchAccessNodes(),
+      _api.fetchDomains(),
+      _api.fetchModels(),
+      _api.fetchSites(),
+    ]);
 
     setState(() {
-      accessNodesRaw   = List<Map<String, dynamic>>.from(nodes);
-      nodeIds          = nodes.map((n) => n['NodeAcID'].toString()).toList();
-      nodeNames        = nodes.map((n) => n['NodeName'].toString()).toList();
-      domainRaw        = List<Map<String, dynamic>>.from(domainData);
-      domains          = domainData.map((d) => d['Domain_Name'].toString()).toList();
-      modelsRaw        = List<Map<String, dynamic>>.from(modelData);
-      models           = modelData.map((m) => m['Model_Name'].toString()).toList();
-      networkNodesRaw  = List<Map<String, dynamic>>.from(networkNodes);
-      networkPortsRaw  = List<Map<String, dynamic>>.from(networkPortData);
-      networkPorts     = networkPortData.map((p) => p['Interface_Name'].toString()).toList();
+      final nodes      = results[0];
+      final domainData = results[1];
+      final modelData  = results[2];
+      final siteData   = results[3];
+
+      accessNodesRaw = List<Map<String, dynamic>>.from(nodes);
+      nodeIds        = nodes.map((n) => n['NodeAcID'].toString()).toList();
+      nodeNames      = nodes.map((n) => n['NodeName'].toString()).toList();
+      domainRaw      = List<Map<String, dynamic>>.from(domainData);
+      domains        = domainData.map((d) => d['Domain_Name'].toString()).toList();
+      modelsRaw      = List<Map<String, dynamic>>.from(modelData);
+      models         = modelData.map((m) => m['Model_Name'].toString()).toList();
+      sitesRaw       = List<Map<String, dynamic>>.from(siteData);
+    });
+  }
+
+  // โหลด network nodes + ports เฉพาะตอนเลือก site
+  Future<void> _loadNetworkNodesBySite(String siteCode) async {
+    setState(() => _isLoadingNodes = true);
+
+    final results = await Future.wait([
+      _api.fetchNetworkNodes(siteCode: siteCode),
+      _api.fetchNetworkInterfaces(),
+    ]);
+
+    setState(() {
+      networkNodesRaw = List<Map<String, dynamic>>.from(results[0]);
+      networkPortsRaw = List<Map<String, dynamic>>.from(results[1]);
+      networkPorts    = results[1].map((p) => p['Interface_Name'].toString()).toList();
+      _isLoadingNodes = false;
     });
   }
 
@@ -179,7 +195,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
       selectedPort = null;          selectedPortAccessId = null;
       selectedSwitchAcId = null;    selectedTemplateId = null;
       filteredSwitchPorts = [];     templatePortsRaw = [];
-      selectedSiteCode = null;      selectedSiteName = null;
+      selectedSiteCode = null;
       selectedNodeNetworkId = null; selectedNodeNwID = null;
       selectedIpNetwork = null;     selectedIpNetworkId = null;
       selectedPortNetwork = null;   selectedPortNetworkId = null;
@@ -209,7 +225,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
           contentPadding: EdgeInsets.zero,
           content: TopologyDiagram(
             selectedSiteCode: selectedSiteCode,
-            selectedSiteName: selectedSiteName,
+            selectedSiteName: selectedSiteCode,
             selectedNodeNetworkId: selectedNodeNetworkId,
             selectedIpNetwork: selectedIpNetwork,
             selectedPortNetwork: selectedPortNetwork,
@@ -303,67 +319,78 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
         children: [
           // Sidebar
           Container(
-            width: 250, color: const Color(0xFF212529),
+            width: 240,
+            color: const Color(0xFF1A1D23),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Logo
                 Container(
-                  height: 60, width: double.infinity, color: const Color(0xFF1A1D20),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: const Text('NODE ASSIST PRO',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                  child: Row(children: [
+                    const Icon(Icons.hub_outlined, color: Colors.blueAccent, size: 28),
+                    const SizedBox(width: 12),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+                      Text('NODE ASSIST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1)),
+                      Text('PRO', style: TextStyle(color: Colors.blueAccent, fontSize: 11, letterSpacing: 3)),
+                    ]),
+                  ]),
                 ),
-                const SizedBox(height: 10),
-                _buildSidebarItem(Icons.dashboard,          'Node Availability',  0),
-                _buildSidebarItem(Icons.search,             'Search & Reserve',   1),
-                _buildSidebarItem(Icons.settings_ethernet,  'Network Topology',   2),
+                const Divider(color: Colors.white12, height: 1),
+                const SizedBox(height: 8),
+                _buildSidebarItem(Icons.dashboard_outlined,    'Dashboard',         0),
+                _buildSidebarItem(Icons.add_circle_outline,    'Search & Reserve',  1),
+                _buildSidebarItem(Icons.hub_outlined,          'Topology Map',      2),
                 const Spacer(),
-                const Divider(color: Colors.white24),
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  child: const Text('Version 1.0.0 (Beta)\nUIH Core Network',
-                    style: TextStyle(color: Colors.grey, fontSize: 12))),
+                const Divider(color: Colors.white12, height: 1),
+                ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.redAccent, size: 20),
+                  title: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontSize: 14)),
+                  onTap: _handleLogout,
+                ),
+                const SizedBox(height: 8),
               ],
             ),
           ),
+
           // Main content
           Expanded(
             child: Column(
               children: [
                 // Top bar
                 Container(
-                  height: 60, padding: const EdgeInsets.symmetric(horizontal: 24),
-                  decoration: BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
+                  height: 64,
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 2))],
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        ['System > Node Availability', 'System > Search & Reserve', 'System > Network Topology'][_selectedMenuIndex.clamp(0,2)],
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 14, fontWeight: FontWeight.w500)),
-                      PopupMenuButton<String>(
-                        offset: const Offset(0, 45),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        onSelected: (v) { if (v == 'logout') _handleLogout(); },
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(value: 'profile', child: ListTile(leading: Icon(Icons.person), title: Text('My Profile'), contentPadding: EdgeInsets.zero)),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(value: 'logout', child: ListTile(leading: Icon(Icons.logout, color: Colors.red), title: Text('Sign Out', style: TextStyle(color: Colors.red)), contentPadding: EdgeInsets.zero)),
-                        ],
-                        child: Row(children: [
-                          const Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                            Text('Admin User', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text('Network Engineer', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                          ]),
-                          const SizedBox(width: 12),
-                          const CircleAvatar(radius: 18, backgroundColor: Color(0xFFE8F0FE),
-                            child: Icon(Icons.person, size: 20, color: Color(0xFF0056B3))),
-                          const Icon(Icons.arrow_drop_down, color: Colors.grey),
-                        ]),
+                        _selectedMenuIndex == 0 ? 'Dashboard'
+                          : _selectedMenuIndex == 1 ? 'Search & Reserve'
+                          : 'Topology Map',
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                       ),
+                      Row(children: [
+                        const Icon(Icons.account_circle_outlined, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        const Text('Admin', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                      ]),
                     ],
                   ),
                 ),
-                Expanded(child: _buildMainContent()),
+
+                // Page content
+                Expanded(
+                  child: _selectedMenuIndex == 0
+                    ? _buildDashboardPage()
+                    : _selectedMenuIndex == 1
+                      ? _buildSearchAndReservePage()
+                      : _buildTopologyMockPage(),
+                ),
               ],
             ),
           ),
@@ -372,117 +399,102 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     );
   }
 
-  Widget _buildMainContent() {
-    switch (_selectedMenuIndex) {
-      case 0:  return _buildNodeAvailabilityPage();
-      case 1:  return _buildSearchAndReservePage();
-      case 2:  return _buildTopologyMockPage();
-      default: return _buildNodeAvailabilityPage();
-    }
-  }
-
   // ════════════════════════════════════════════
-  //  PAGE: Node Availability
+  //  PAGE: Dashboard
   // ════════════════════════════════════════════
 
-  Widget _buildNodeAvailabilityPage() {
-    final filtered = _mockTableData.where((n) =>
-      n['id'].toString().toLowerCase().contains(_searchTableId.toLowerCase()) &&
-      n['name'].toString().toLowerCase().contains(_searchTableName.toLowerCase())).toList();
+  Widget _buildDashboardPage() {
+    final filtered = _mockTableData.where((row) {
+      final matchId   = row['id'].toString().contains(_searchTableId);
+      final matchName = row['name'].toString().toLowerCase().contains(_searchTableName.toLowerCase());
+      return matchId && matchName;
+    }).toList();
 
     return Padding(
-      padding: const EdgeInsets.all(40),
+      padding: const EdgeInsets.all(32),
       child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade300),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
+        decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
+            Padding(
               padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8F9FA),
-                borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-                border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Node Availability Status', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                const SizedBox(height: 8),
-                const Text('ตรวจสอบสถานะความพร้อมของ Node ก่อนทำการจอง', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                const SizedBox(height: 24),
-                Row(children: [
-                  Expanded(child: TextField(
-                    onChanged: (v) => setState(() => _searchTableId = v),
-                    decoration: _searchDecor('Search Node ID...', Icons.search))),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      onChanged: (v) => setState(() => _searchTableId = v),
+                      decoration: _searchDecor('Search ID...', Icons.search),
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  Expanded(child: TextField(
-                    onChanged: (v) => setState(() => _searchTableName = v),
-                    decoration: _searchDecor('Search Node Name...', Icons.business))),
-                  const SizedBox(width: 16),
-                  ElevatedButton.icon(
-                    onPressed: () { _clearData(); setState(() => _selectedMenuIndex = 1); },
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                    icon: const Icon(Icons.add_circle_outline),
-                    label: const Text('New Reservation', style: TextStyle(fontWeight: FontWeight.bold))),
-                ]),
-              ]),
+                  Expanded(
+                    child: TextField(
+                      onChanged: (v) => setState(() => _searchTableName = v),
+                      decoration: _searchDecor('Search Name...', Icons.search),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            SingleChildScrollView(
-              child: filtered.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(40),
-                    child: Center(child: Text('No matching nodes found.', style: TextStyle(color: Colors.grey, fontSize: 16))))
-                : SizedBox(width: double.infinity,
-                    child: DataTable(
-                      headingRowHeight: 56, dataRowHeight: 64,
-                      headingRowColor: MaterialStateProperty.all(Colors.white),
-                      columns: const [
-                        DataColumn(label: Text('NODE ID', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF495057), fontSize: 13))),
-                        DataColumn(label: Text('NODE NAME / LOCATION', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF495057), fontSize: 13))),
-                        DataColumn(label: Text('STATUS / ACTION', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF495057), fontSize: 13))),
-                      ],
-                      rows: filtered.map((node) {
-                        final isAvail = node['isAvailable'] as bool;
-                        return DataRow(cells: [
-                          DataCell(Text(node['id'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
-                          DataCell(Text(node['name'], style: TextStyle(color: isAvail ? Colors.grey.shade400 : Colors.black87, fontSize: 14))),
-                          DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: isAvail ? Colors.green.shade50 : Colors.red.shade50,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: isAvail ? Colors.green.shade200 : Colors.red.shade200)),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(isAvail ? Icons.check_circle : Icons.cancel, size: 14, color: isAvail ? Colors.green.shade700 : Colors.red.shade700),
-                                const SizedBox(width: 6),
-                                Text(isAvail ? 'ว่าง (Available)' : 'ไม่ว่าง (Unavailable)',
-                                  style: TextStyle(color: isAvail ? Colors.green.shade700 : Colors.red.shade700, fontSize: 13, fontWeight: FontWeight.bold)),
-                              ])),
-                            if (isAvail) ...[
-                              const SizedBox(width: 16),
-                              ElevatedButton.icon(
-                                onPressed: () { _clearData(); setState(() { selectedNodeId = node['id']; _selectedMenuIndex = 1; _autocompleteKey = UniqueKey(); }); },
-                                icon: const Icon(Icons.touch_app, size: 16),
-                                label: const Text('เลือก', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  minimumSize: const Size(0, 36),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)))),
-                            ]
-                          ])),
-                        ]);
-                      }).toList(),
-                    ),          // DataTable
-                  ),            // SizedBox
-            ),                  // SingleChildScrollView
-          ],                    // Column children
-        ),                      // Column
-      ),                        // Container
-    );                          // Padding
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                child: SizedBox(
+                  width: double.infinity,
+                  child: DataTable(
+                    headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
+                    columns: const [
+                      DataColumn(label: Text('Node ID',   style: TextStyle(fontWeight: FontWeight.bold))),
+                      DataColumn(label: Text('Node Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                      DataColumn(label: Text('Status',    style: TextStyle(fontWeight: FontWeight.bold))),
+                      DataColumn(label: Text('Action',    style: TextStyle(fontWeight: FontWeight.bold))),
+                    ],
+                    rows: filtered.map((node) {
+                      final isAvailable = node['isAvailable'] as bool;
+                      return DataRow(cells: [
+                        DataCell(Text(node['id'], style: const TextStyle(fontWeight: FontWeight.bold))),
+                        DataCell(Text(node['name'], overflow: TextOverflow.ellipsis)),
+                        DataCell(Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isAvailable ? Colors.green.shade50 : Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: isAvailable ? Colors.green.shade200 : Colors.red.shade200),
+                          ),
+                          child: Text(
+                            isAvailable ? 'Available' : 'In Use',
+                            style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold,
+                              color: isAvailable ? Colors.green.shade700 : Colors.red.shade700,
+                            ),
+                          ),
+                        )),
+                        DataCell(Row(children: [
+                          if (isAvailable)
+                            ElevatedButton.icon(
+                              onPressed: () { _clearData(); setState(() { selectedNodeId = node['id']; _selectedMenuIndex = 1; _autocompleteKey = UniqueKey(); }); },
+                              icon: const Icon(Icons.touch_app, size: 16),
+                              label: const Text('เลือก', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                minimumSize: const Size(0, 36),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)))),
+                        ])),
+                      ]);
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ════════════════════════════════════════════
@@ -511,7 +523,6 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
               Padding(padding: const EdgeInsets.all(24), child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Node ID autocomplete (custom — แสดง available badge)
                   Expanded(child: _buildNodeIdField()),
                   const SizedBox(width: 20),
                   Expanded(child: SearchField(label: 'Search Node Name', hint: 'Type to search name',
@@ -564,18 +575,42 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                   Expanded(child: SearchField(label: 'Search Site Code LSW', hint: 'e.g., BCH-5012-UR',
                     items: siteCodes, initialValue: selectedSiteCode,
                     onSelected: (val) {
-                      final s = mockSites.firstWhere((s) => s['code'] == val, orElse: () => {});
-                      setState(() { selectedSiteCode = val; if (s.isNotEmpty) selectedSiteName = s['name']; _tempSelectedPorts.clear(); _tempIpNetworks.clear(); });
-                    })),
-                  const SizedBox(width: 20),
-                  Expanded(child: SearchField(label: 'Search Site Name', hint: 'e.g., True IDC...',
-                    items: siteNames, initialValue: selectedSiteName,
-                    onSelected: (val) {
-                      final s = mockSites.firstWhere((s) => s['name'] == val, orElse: () => {});
-                      setState(() { selectedSiteName = val; if (s.isNotEmpty) selectedSiteCode = s['code']; _tempSelectedPorts.clear(); _tempIpNetworks.clear(); });
+                      setState(() {
+                        selectedSiteCode = val;
+                        selectedNodeNetworkId = null; selectedNodeNwID = null;
+                        selectedPortNetwork = null;   selectedPortNetworkId = null;
+                        selectedSwitchNwId = null;    selectedIpNetwork = null;
+                        selectedIpNetworkId = null;
+                        networkNodesRaw = [];
+                        _tempSelectedPorts.clear();   _tempIpNetworks.clear();
+                      });
+                      _loadNetworkNodesBySite(val);
                     })),
                 ]),
-                if ((selectedSiteCode?.isNotEmpty ?? false) || (selectedSiteName?.isNotEmpty ?? false)) ...[
+
+                if (selectedSiteCode?.isNotEmpty ?? false) ...[
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    if (_isLoadingNodes)
+                      const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    else
+                      const Icon(Icons.filter_list, size: 16, color: Colors.blueGrey),
+                    const SizedBox(width: 6),
+                    Text(
+                      _isLoadingNodes
+                        ? 'กำลังโหลด nodes ใน $selectedSiteCode...'
+                        : 'แสดง ${networkNodesRaw.length} nodes ใน $selectedSiteCode'
+                          '${networkNodesRaw.isEmpty ? " (ไม่พบ node ใน site นี้)" : ""}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: (!_isLoadingNodes && networkNodesRaw.isEmpty) ? Colors.orange.shade700 : Colors.blueGrey.shade700,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ]),
+                ],
+
+                if (!_isLoadingNodes && (selectedSiteCode?.isNotEmpty ?? false)) ...[
                   const SizedBox(height: 30),
                   NetworkSelectionTable(
                     networkNodesRaw: networkNodesRaw,
