@@ -18,15 +18,13 @@ class _DomainScreenState extends State<DomainScreen> {
   bool _loadingDomains = false;
   bool _loadingIps     = false;
 
+  String _searchDomain = '';
+
   @override
   void initState() {
     super.initState();
     _fetchDomains();
   }
-
-  // ════════════════════════════════════════════
-  //  DATA LOADING
-  // ════════════════════════════════════════════
 
   Future<void> _fetchDomains() async {
     setState(() => _loadingDomains = true);
@@ -37,7 +35,6 @@ class _DomainScreenState extends State<DomainScreen> {
   Future<void> _fetchIps(int domainId) async {
     setState(() => _loadingIps = true);
     final data = await _api.fetchIpsByDomain(domainId);
-    // เช็ค in_use ผ่าน ac_interfaces / nw_interfaces
     final ipsWithStatus = await _api.fetchIpsWithStatus(domainId);
     setState(() { _ips = ipsWithStatus; _loadingIps = false; });
   }
@@ -47,17 +44,12 @@ class _DomainScreenState extends State<DomainScreen> {
     _fetchIps(domain['Domain_id'] as int);
   }
 
-  // ════════════════════════════════════════════
-  //  DOMAIN DIALOGS
-  // ════════════════════════════════════════════
-
   void _showDomainDialog({Map<String, dynamic>? existing}) {
     final nameCtrl = TextEditingController(text: existing?['Domain_Name'] ?? '');
     final vlanCtrl = TextEditingController(text: existing?['Vlan']?.toString() ?? '');
 
     showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: Text(existing == null ? 'Add Domain' : 'Edit Domain',
-        style: const TextStyle(fontWeight: FontWeight.bold)),
+      title: Text(existing == null ? 'Add Domain' : 'Edit Domain', style: const TextStyle(fontWeight: FontWeight.bold)),
       content: SizedBox(width: 360, child: Column(mainAxisSize: MainAxisSize.min, children: [
         _buildTextField(nameCtrl, 'Domain Name', 'e.g., BKK-MPLS'),
         const SizedBox(height: 16),
@@ -108,17 +100,12 @@ class _DomainScreenState extends State<DomainScreen> {
     ));
   }
 
-  // ════════════════════════════════════════════
-  //  IP DIALOGS
-  // ════════════════════════════════════════════
-
   void _showIpDialog({Map<String, dynamic>? existing}) {
     final ipCtrl     = TextEditingController(text: existing?['IP'] ?? '');
     final prefixCtrl = TextEditingController(text: existing?['Prefix']?.toString() ?? '');
 
     showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: Text(existing == null ? 'Add IP' : 'Edit IP',
-        style: const TextStyle(fontWeight: FontWeight.bold)),
+      title: Text(existing == null ? 'Add IP' : 'Edit IP', style: const TextStyle(fontWeight: FontWeight.bold)),
       content: SizedBox(width: 360, child: Column(mainAxisSize: MainAxisSize.min, children: [
         _buildTextField(ipCtrl, 'IP Address', 'e.g., 10.98.4.200'),
         const SizedBox(height: 16),
@@ -131,11 +118,9 @@ class _DomainScreenState extends State<DomainScreen> {
           onPressed: () async {
             Navigator.pop(ctx);
             if (existing == null) {
-              await _api.createIp(_selectedDomain!['Domain_id'] as int,
-                ipCtrl.text.trim(), int.tryParse(prefixCtrl.text));
+              await _api.createIp(_selectedDomain!['Domain_id'] as int, ipCtrl.text.trim(), int.tryParse(prefixCtrl.text));
             } else {
-              await _api.updateIp(existing['IP_id'] as int,
-                ipCtrl.text.trim(), int.tryParse(prefixCtrl.text));
+              await _api.updateIp(existing['IP_id'] as int, ipCtrl.text.trim(), int.tryParse(prefixCtrl.text));
             }
             _fetchIps(_selectedDomain!['Domain_id'] as int);
           },
@@ -173,22 +158,21 @@ class _DomainScreenState extends State<DomainScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
   }
 
-  // ════════════════════════════════════════════
-  //  BUILD
-  // ════════════════════════════════════════════
-
   @override
   Widget build(BuildContext context) {
+    final filteredDomains = _domains.where((d) => 
+      d['Domain_Name'].toString().toLowerCase().contains(_searchDomain.toLowerCase())
+    ).toList();
+
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-        // ─── Domain List (left panel) ───
+        // ─── Left Panel (Domains) ───
         SizedBox(
-          width: 300,
+          width: 320,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Domains', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text('Domains', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
               ElevatedButton.icon(
                 onPressed: () => _showDomainDialog(),
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
@@ -198,21 +182,33 @@ class _DomainScreenState extends State<DomainScreen> {
               ),
             ]),
             const SizedBox(height: 12),
+            SizedBox(
+              height: 38,
+              child: TextField(
+                onChanged: (val) => setState(() => _searchDomain = val),
+                decoration: InputDecoration(
+                  hintText: 'Search domain...',
+                  hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                  prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey.shade400),
+                  filled: true, fillColor: Colors.grey.shade100,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Expanded(
               child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
                 child: _loadingDomains
                   ? const Center(child: CircularProgressIndicator())
-                  : _domains.isEmpty
-                    ? Center(child: Text('ยังไม่มี Domain', style: TextStyle(color: Colors.grey.shade400)))
+                  : filteredDomains.isEmpty
+                    ? Center(child: Text('ไม่พบข้อมูล', style: TextStyle(color: Colors.grey.shade400)))
                     : ListView.separated(
-                        itemCount: _domains.length,
+                        itemCount: filteredDomains.length,
                         separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
                         itemBuilder: (_, i) {
-                          final d = _domains[i];
+                          final d = filteredDomains[i];
                           final isSelected = _selectedDomain?['Domain_id'] == d['Domain_id'];
                           return InkWell(
                             onTap: () => _selectDomain(d),
@@ -222,11 +218,9 @@ class _DomainScreenState extends State<DomainScreen> {
                               child: Row(children: [
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(d['Domain_Name'].toString(),
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14,
-                                      color: isSelected ? const Color(0xFF0056B3) : Colors.black87)),
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isSelected ? const Color(0xFF0056B3) : Colors.black87)),
                                   if (d['Vlan'] != null)
-                                    Text('VLAN ${d['Vlan']}',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                                    Text('VLAN ${d['Vlan']}', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                                 ])),
                                 PopupMenuButton<String>(
                                   onSelected: (v) {
@@ -234,7 +228,7 @@ class _DomainScreenState extends State<DomainScreen> {
                                     if (v == 'delete') _confirmDeleteDomain(d);
                                   },
                                   itemBuilder: (_) => [
-                                    const PopupMenuItem(value: 'edit',   child: Text('Edit')),
+                                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
                                     const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
                                   ],
                                   child: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade400),
@@ -249,16 +243,13 @@ class _DomainScreenState extends State<DomainScreen> {
           ]),
         ),
 
-        const SizedBox(width: 24),
+        const SizedBox(width: 32),
 
-        // ─── IP List (right panel) ───
+        // ─── Right Panel (IPs) ───
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text(
-                _selectedDomain == null
-                  ? 'เลือก Domain เพื่อดู IP'
-                  : 'IPs ใน ${_selectedDomain!['Domain_Name']}',
+              Text(_selectedDomain == null ? 'เลือก Domain เพื่อดูข้อมูล' : 'IPs ใน ${_selectedDomain!['Domain_Name']}',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               if (_selectedDomain != null)
                 ElevatedButton.icon(
@@ -273,32 +264,27 @@ class _DomainScreenState extends State<DomainScreen> {
 
             if (_selectedDomain == null)
               Expanded(child: Container(
-                decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade200)),
+                decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade200)),
                 child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.dns_outlined, size: 56, color: Colors.grey.shade300),
+                  Icon(Icons.touch_app_outlined, size: 56, color: Colors.grey.shade300),
                   const SizedBox(height: 12),
-                  Text('เลือก Domain จากด้านซ้าย', style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
+                  Text('กรุณาเลือกเมนูด้านซ้ายเพื่อดูข้อมูล', style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
                 ])),
               ))
             else if (_loadingIps)
               const Expanded(child: Center(child: CircularProgressIndicator()))
             else
               Expanded(child: Container(
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300)),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
                 child: Column(children: [
-                  // header
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(color: Colors.grey.shade50,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(8))),
+                    decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: const BorderRadius.vertical(top: Radius.circular(8))),
                     child: Row(children: [
                       Expanded(flex: 3, child: Text('IP ADDRESS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade600))),
                       Expanded(flex: 1, child: Text('PREFIX', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade600))),
                       Expanded(flex: 2, child: Text('STATUS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade600))),
-                      const SizedBox(width: 80, child: Text('ACTION', textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
+                      const SizedBox(width: 80, child: Text('ACTION', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
                     ]),
                   ),
                   Expanded(
@@ -313,27 +299,14 @@ class _DomainScreenState extends State<DomainScreen> {
                             return Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                               child: Row(children: [
-                                Expanded(flex: 3, child: Text(ip['IP'].toString(),
-                                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14))),
-                                Expanded(flex: 1, child: Text(
-                                  ip['Prefix'] != null ? '/${ip['Prefix']}' : '-',
-                                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
-                                Expanded(flex: 2, child: _buildIpStatusBadge(inUse)),
+                                Expanded(flex: 3, child: Text(ip['IP'].toString(), style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14))),
+                                Expanded(flex: 1, child: Text(ip['Prefix'] != null ? '/${ip['Prefix']}' : '-', style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
+                                Expanded(flex: 2, child: _buildStatusBadge(inUse)),
                                 SizedBox(width: 80, child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit_outlined, size: 18),
-                                      color: Colors.blueGrey,
-                                      tooltip: 'Edit',
-                                      onPressed: inUse ? null : () => _showIpDialog(existing: ip),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline, size: 18),
-                                      color: inUse ? Colors.grey.shade300 : Colors.red.shade400,
-                                      tooltip: inUse ? 'ใช้งานอยู่ ลบไม่ได้' : 'Delete',
-                                      onPressed: inUse ? null : () => _confirmDeleteIp(ip),
-                                    ),
+                                    IconButton(icon: const Icon(Icons.edit_outlined, size: 18), color: Colors.blueGrey, tooltip: 'Edit', onPressed: inUse ? null : () => _showIpDialog(existing: ip)),
+                                    IconButton(icon: const Icon(Icons.delete_outline, size: 18), color: inUse ? Colors.grey.shade300 : Colors.red.shade400, tooltip: inUse ? 'ใช้งานอยู่ ลบไม่ได้' : 'Delete', onPressed: inUse ? null : () => _confirmDeleteIp(ip)),
                                   ],
                                 )),
                               ]),
@@ -349,16 +322,11 @@ class _DomainScreenState extends State<DomainScreen> {
     );
   }
 
-  Widget _buildIpStatusBadge(bool inUse) {
+  Widget _buildStatusBadge(bool inUse) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: inUse ? Colors.red.shade50 : Colors.green.shade50,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: inUse ? Colors.red.shade200 : Colors.green.shade200)),
-      child: Text(inUse ? 'In Use' : 'Available',
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
-          color: inUse ? Colors.red.shade700 : Colors.green.shade700)),
+      decoration: BoxDecoration(color: inUse ? Colors.red.shade50 : Colors.green.shade50, borderRadius: BorderRadius.circular(4), border: Border.all(color: inUse ? Colors.red.shade200 : Colors.green.shade200)),
+      child: Text(inUse ? 'In Use' : 'Available', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: inUse ? Colors.red.shade700 : Colors.green.shade700)),
     );
   }
 
@@ -366,18 +334,7 @@ class _DomainScreenState extends State<DomainScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
       const SizedBox(height: 6),
-      TextField(
-        controller: ctrl,
-        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        decoration: InputDecoration(
-          hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400),
-          filled: true, fillColor: const Color(0xFFF8F9FA),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: Color(0xFF0056B3), width: 2)),
-        ),
-      ),
+      TextField(controller: ctrl, keyboardType: isNumber ? TextInputType.number : TextInputType.text, decoration: InputDecoration(hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400), filled: true, fillColor: const Color(0xFFF8F9FA), contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF0056B3), width: 2)))),
     ]);
   }
 }

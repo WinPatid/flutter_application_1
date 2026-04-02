@@ -8,6 +8,7 @@ import '../widgets/topology_diagram.dart';
 import 'login_screen.dart';
 import 'bulk_import_screen.dart';
 import 'domain_screen.dart';
+import 'site_screen.dart'; // 🚨 เพิ่ม Import ตรงนี้นะครับ 🚨
 
 class NodeAssistScreen extends StatefulWidget {
   const NodeAssistScreen({super.key});
@@ -370,6 +371,8 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                 _buildSidebarItem(Icons.hub_outlined,         'Topology Map',     2),
                 _buildSidebarItem(Icons.upload_file_outlined, 'Bulk Import',      3),
                 _buildSidebarItem(Icons.dns_outlined,         'Domain & IP',      4),
+                // 🚨 เมนูใหม่ที่เพิ่มเข้ามาครับ 🚨
+                _buildSidebarItem(Icons.business_outlined,    'Site Code',        5), 
                 const Spacer(),
                 const Divider(color: Colors.white12, height: 1),
                 ListTile(
@@ -403,7 +406,8 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                           : _selectedMenuIndex == 1 ? 'Search & Reserve'
                           : _selectedMenuIndex == 2 ? 'Topology Map'
                           : _selectedMenuIndex == 3 ? 'Bulk Import'
-                          : 'Domain & IP',
+                          : _selectedMenuIndex == 4 ? 'Domain & IP'
+                          : 'Site Code', // อัพเดตชื่อหัวข้อตามเมนูใหม่
                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                       ),
                       // Admin User Button
@@ -439,7 +443,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                   ),
                 ),
 
-                // Page content
+                // Page content (ส่วนนี้จัดการการแสดงผลหน้าจอต่างๆ)
                 Expanded(
                   child: _selectedMenuIndex == 0
                     ? _buildDashboardPage()
@@ -449,7 +453,9 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                         ? _buildTopologyMockPage()
                         : _selectedMenuIndex == 3
                           ? const BulkImportScreen()
-                          : const DomainScreen(),
+                          : _selectedMenuIndex == 4
+                            ? const DomainScreen()
+                            : const SiteScreen(), // 🚨 ผูกหน้าจอใหม่เข้ากับ Index ที่ 5
                 ),
               ],
             ),
