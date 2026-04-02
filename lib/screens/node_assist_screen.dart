@@ -6,6 +6,8 @@ import '../widgets/dropdown_field.dart';
 import '../widgets/network_table.dart';
 import '../widgets/topology_diagram.dart';
 import 'login_screen.dart';
+import 'bulk_import_screen.dart';
+import 'domain_screen.dart';
 
 class NodeAssistScreen extends StatefulWidget {
   const NodeAssistScreen({super.key});
@@ -48,6 +50,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
 
   // ─── Phase 2: Network ───
   String? selectedSiteCode;
+  String? selectedSiteName;
   String? selectedNodeNetworkId;
   int?    selectedNodeNwID;
   String? selectedIpNetwork;
@@ -89,12 +92,12 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   List<String> models         = [];
   List<String> filteredSwitchPorts            = [];
   List<Map<String, dynamic>> templatePortsRaw = [];
-  List<Map<String, dynamic>> networkNodesRaw  = [];  // โหลดเฉพาะตอนเลือก site
-  List<Map<String, dynamic>> networkPortsRaw  = [];
-  List<String> networkPorts   = [];
+  List<Map<String, dynamic>> networkNodesRaw  = [];
+  Map<String, List<Map<String, dynamic>>> networkPortsByNode = {};
   bool _isLoadingNodes = false;
+  String? _loadingPortsForNode;
 
-  // ─── Site data (จาก API) ───
+  // ─── Site data ───
   List<Map<String, dynamic>> sitesRaw = [];
   List<String> get siteCodes => sitesRaw.map((e) => e['Site_code'].toString()).toList();
 
@@ -111,7 +114,6 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    // โหลด parallel เฉพาะข้อมูลที่ต้องใช้ตอน init
     final results = await Future.wait([
       _api.fetchAccessNodes(),
       _api.fetchDomains(),
@@ -136,20 +138,22 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     });
   }
 
-  // โหลด network nodes + ports เฉพาะตอนเลือก site
   Future<void> _loadNetworkNodesBySite(String siteCode) async {
-    setState(() => _isLoadingNodes = true);
-
-    final results = await Future.wait([
-      _api.fetchNetworkNodes(siteCode: siteCode),
-      _api.fetchNetworkInterfaces(),
-    ]);
-
+    setState(() { _isLoadingNodes = true; networkPortsByNode = {}; });
+    final nodes = await _api.fetchNetworkNodes(siteCode: siteCode);
     setState(() {
-      networkNodesRaw = List<Map<String, dynamic>>.from(results[0]);
-      networkPortsRaw = List<Map<String, dynamic>>.from(results[1]);
-      networkPorts    = results[1].map((p) => p['Interface_Name'].toString()).toList();
+      networkNodesRaw = List<Map<String, dynamic>>.from(nodes);
       _isLoadingNodes = false;
+    });
+  }
+
+  Future<void> _loadPortsForNode(String nodeId) async {
+    if (networkPortsByNode.containsKey(nodeId)) return;
+    setState(() => _loadingPortsForNode = nodeId);
+    final ports = await _api.fetchNetworkNodePorts(int.parse(nodeId));
+    setState(() {
+      networkPortsByNode[nodeId] = List<Map<String, dynamic>>.from(ports);
+      _loadingPortsForNode = null;
     });
   }
 
@@ -195,11 +199,12 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
       selectedPort = null;          selectedPortAccessId = null;
       selectedSwitchAcId = null;    selectedTemplateId = null;
       filteredSwitchPorts = [];     templatePortsRaw = [];
-      selectedSiteCode = null;
+      selectedSiteCode = null;      selectedSiteName = null;
       selectedNodeNetworkId = null; selectedNodeNwID = null;
       selectedIpNetwork = null;     selectedIpNetworkId = null;
       selectedPortNetwork = null;   selectedPortNetworkId = null;
       selectedSwitchNwId = null;
+      networkNodesRaw = [];         networkPortsByNode = {};
       ipList = [];    ipNetworkList = [];    ipRaw = [];
       _tempSelectedPorts.clear();   _tempIpNetworks.clear();
       _currentPhase = 1;
@@ -246,7 +251,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             selectedIpNetworkId: selectedIpNetworkId,
             selectedSwitchNwId: selectedSwitchNwId,
             api: _api,
-            onTestConnection: () => _handleTestConnection(setStateDialog),
+            onTestConnection: () {},
             onBack: () => Navigator.pop(context),
             onSuccess: _clearData,
           ),
@@ -255,56 +260,80 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     );
   }
 
-  void _handleTestConnection(StateSetter setStateDialog) {
-    showDialog(
-      context: context, barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: Colors.greenAccent)),
-    );
-    Future.delayed(const Duration(seconds: 1), () {
-      Navigator.pop(context);
-      final details = <Widget>[];
-      void add(String label, String? val) {
-        if (val != null && val.trim().isNotEmpty) {
-          details.add(Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text('$label: $val', style: const TextStyle(color: Colors.white70, fontSize: 14))));
-        }
-      }
-      add('Node ID', selectedNodeId);       add('Node Name', selectedNodeName);
-      add('Area Group', selectedAreaGroup); add('Domain', selectedDomain);
-      add('IP Assist', selectedIpAddress);  add('Model', selectedModel);
-      add('Switch Port', selectedPort);     add('Site Code', selectedSiteCode);
-      add('Network ID', selectedNodeNetworkId); add('IP Network', selectedIpNetwork);
-      add('Port Network', selectedPortNetwork);
-
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF2B2B2B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white12)),
-          title: const Text('Succeeded', style: TextStyle(color: Color(0xFFA5D63F), fontWeight: FontWeight.bold, fontSize: 24)),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
-            children: details.isEmpty
-              ? [const Text('No configuration data.', style: TextStyle(color: Colors.white54, fontStyle: FontStyle.italic))]
-              : details),
-          actions: [
-            ElevatedButton(
-              onPressed: () { Navigator.pop(ctx); setStateDialog(() => _isConnectionTested = true); },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A88C7), foregroundColor: Colors.white),
-              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
-            )
-          ],
-        ),
-      );
-    });
-  }
-
   void _handleLogout() {
     Navigator.pushReplacement(context, PageRouteBuilder(
       pageBuilder: (_, __, ___) => const LoginScreen(),
       transitionsBuilder: (_, animation, __, child) => FadeTransition(opacity: animation, child: child),
       transitionDuration: const Duration(milliseconds: 400),
     ));
+  }
+
+  void _showAdminPopup() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: 360,
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80, height: 80,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF0056B3), Color(0xFF4A88C7)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                child: const Icon(Icons.person, color: Colors.white, size: 44),
+              ),
+              const SizedBox(height: 16),
+              const Text('Admin User', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+              const SizedBox(height: 4),
+              Text('Network Engineer', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+              _buildInfoRow(Icons.badge_outlined,        'Role',         'Administrator'),
+              const SizedBox(height: 12),
+              _buildInfoRow(Icons.business_outlined,     'Organization', 'IIH Core Network'),
+              const SizedBox(height: 12),
+              _buildInfoRow(Icons.verified_user_outlined,'Access Level', 'Full Access'),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () { Navigator.pop(ctx); _handleLogout(); },
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close', style: TextStyle(color: Colors.grey)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(children: [
+      Icon(icon, size: 18, color: Colors.blueAccent),
+      const SizedBox(width: 10),
+      Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+      Expanded(child: Text(value, style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
+    ]);
   }
 
   // ════════════════════════════════════════════
@@ -317,13 +346,12 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: Row(
         children: [
-          // Sidebar
+          // ─── Sidebar ───
           Container(
             width: 240,
             color: const Color(0xFF1A1D23),
             child: Column(
               children: [
-                // Logo
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
                   child: Row(children: [
@@ -337,9 +365,11 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                 ),
                 const Divider(color: Colors.white12, height: 1),
                 const SizedBox(height: 8),
-                _buildSidebarItem(Icons.dashboard_outlined,    'Dashboard',         0),
-                _buildSidebarItem(Icons.add_circle_outline,    'Search & Reserve',  1),
-                _buildSidebarItem(Icons.hub_outlined,          'Topology Map',      2),
+                _buildSidebarItem(Icons.dashboard_outlined,   'Dashboard',        0),
+                _buildSidebarItem(Icons.add_circle_outline,   'Search & Reserve', 1),
+                _buildSidebarItem(Icons.hub_outlined,         'Topology Map',     2),
+                _buildSidebarItem(Icons.upload_file_outlined, 'Bulk Import',      3),
+                _buildSidebarItem(Icons.dns_outlined,         'Domain & IP',      4),
                 const Spacer(),
                 const Divider(color: Colors.white12, height: 1),
                 ListTile(
@@ -352,7 +382,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             ),
           ),
 
-          // Main content
+          // ─── Main Content ───
           Expanded(
             child: Column(
               children: [
@@ -371,14 +401,40 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                       Text(
                         _selectedMenuIndex == 0 ? 'Dashboard'
                           : _selectedMenuIndex == 1 ? 'Search & Reserve'
-                          : 'Topology Map',
+                          : _selectedMenuIndex == 2 ? 'Topology Map'
+                          : _selectedMenuIndex == 3 ? 'Bulk Import'
+                          : 'Domain & IP',
                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                       ),
-                      Row(children: [
-                        const Icon(Icons.account_circle_outlined, color: Colors.grey),
-                        const SizedBox(width: 8),
-                        const Text('Admin', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                      ]),
+                      // Admin User Button
+                      InkWell(
+                        onTap: _showAdminPopup,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade200),
+                            borderRadius: BorderRadius.circular(8)),
+                          child: Row(children: [
+                            Container(
+                              width: 32, height: 32,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: [Color(0xFF0056B3), Color(0xFF4A88C7)],
+                                  begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                              child: const Icon(Icons.person, color: Colors.white, size: 18),
+                            ),
+                            const SizedBox(width: 10),
+                            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              const Text('Admin User', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                              Text('Network Engineer', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                            ]),
+                            const SizedBox(width: 8),
+                            Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade400, size: 18),
+                          ]),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -389,7 +445,11 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                     ? _buildDashboardPage()
                     : _selectedMenuIndex == 1
                       ? _buildSearchAndReservePage()
-                      : _buildTopologyMockPage(),
+                      : _selectedMenuIndex == 2
+                        ? _buildTopologyMockPage()
+                        : _selectedMenuIndex == 3
+                          ? const BulkImportScreen()
+                          : const DomainScreen(),
                 ),
               ],
             ),
@@ -418,81 +478,63 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      onChanged: (v) => setState(() => _searchTableId = v),
-                      decoration: _searchDecor('Search ID...', Icons.search),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextField(
-                      onChanged: (v) => setState(() => _searchTableName = v),
-                      decoration: _searchDecor('Search Name...', Icons.search),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: SingleChildScrollView(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
-                    columns: const [
-                      DataColumn(label: Text('Node ID',   style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataColumn(label: Text('Node Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataColumn(label: Text('Status',    style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataColumn(label: Text('Action',    style: TextStyle(fontWeight: FontWeight.bold))),
-                    ],
-                    rows: filtered.map((node) {
-                      final isAvailable = node['isAvailable'] as bool;
-                      return DataRow(cells: [
-                        DataCell(Text(node['id'], style: const TextStyle(fontWeight: FontWeight.bold))),
-                        DataCell(Text(node['name'], overflow: TextOverflow.ellipsis)),
-                        DataCell(Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isAvailable ? Colors.green.shade50 : Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: isAvailable ? Colors.green.shade200 : Colors.red.shade200),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Row(children: [
+              Expanded(child: TextField(onChanged: (v) => setState(() => _searchTableId = v), decoration: _searchDecor('Search ID...', Icons.search))),
+              const SizedBox(width: 16),
+              Expanded(child: TextField(onChanged: (v) => setState(() => _searchTableName = v), decoration: _searchDecor('Search Name...', Icons.search))),
+            ]),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              child: SizedBox(
+                width: double.infinity,
+                child: DataTable(
+                  headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
+                  columns: const [
+                    DataColumn(label: Text('Node ID',   style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(label: Text('Node Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(label: Text('Status',    style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(label: Text('Action',    style: TextStyle(fontWeight: FontWeight.bold))),
+                  ],
+                  rows: filtered.map((node) {
+                    final isAvailable = node['isAvailable'] as bool;
+                    return DataRow(cells: [
+                      DataCell(Text(node['id'], style: const TextStyle(fontWeight: FontWeight.bold))),
+                      DataCell(Text(node['name'], overflow: TextOverflow.ellipsis)),
+                      DataCell(Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isAvailable ? Colors.green.shade50 : Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: isAvailable ? Colors.green.shade200 : Colors.red.shade200)),
+                        child: Text(isAvailable ? 'Available' : 'In Use',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
+                            color: isAvailable ? Colors.green.shade700 : Colors.red.shade700)),
+                      )),
+                      DataCell(Row(children: [
+                        if (isAvailable)
+                          ElevatedButton.icon(
+                            onPressed: () { _clearData(); setState(() { selectedNodeId = node['id']; _selectedMenuIndex = 1; _autocompleteKey = UniqueKey(); }); },
+                            icon: const Icon(Icons.touch_app, size: 16),
+                            label: const Text('เลือก', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              minimumSize: const Size(0, 36),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))),
                           ),
-                          child: Text(
-                            isAvailable ? 'Available' : 'In Use',
-                            style: TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.bold,
-                              color: isAvailable ? Colors.green.shade700 : Colors.red.shade700,
-                            ),
-                          ),
-                        )),
-                        DataCell(Row(children: [
-                          if (isAvailable)
-                            ElevatedButton.icon(
-                              onPressed: () { _clearData(); setState(() { selectedNodeId = node['id']; _selectedMenuIndex = 1; _autocompleteKey = UniqueKey(); }); },
-                              icon: const Icon(Icons.touch_app, size: 16),
-                              label: const Text('เลือก', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                minimumSize: const Size(0, 36),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)))),
-                        ])),
-                      ]);
-                    }).toList(),
-                  ),
+                      ])),
+                    ]);
+                  }).toList(),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ]),
       ),
     );
   }
@@ -518,21 +560,20 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             border: Border.all(color: Colors.grey.shade300),
             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))]),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+            // ── Phase 1 ──
             if (_currentPhase == 1) ...[
               _buildStepHeader('1. ข้อมูล LSW Access'),
-              Padding(padding: const EdgeInsets.all(24), child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _buildNodeIdField()),
-                  const SizedBox(width: 20),
-                  Expanded(child: SearchField(label: 'Search Node Name', hint: 'Type to search name',
-                    items: nodeNames, initialValue: selectedNodeName,
-                    onSelected: (val) => setState(() => selectedNodeName = val), fieldKey: _keyNodeName)),
-                  const SizedBox(width: 20),
-                  Expanded(child: DropdownField(label: 'Select Area Group', items: areaGroups,
-                    currentValue: selectedAreaGroup, onChanged: (val) => setState(() => selectedAreaGroup = val))),
-                ],
-              )),
+              Padding(padding: const EdgeInsets.all(24), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: _buildNodeIdField()),
+                const SizedBox(width: 20),
+                Expanded(child: SearchField(label: 'Search Node Name', hint: 'Type to search name',
+                  items: nodeNames, initialValue: selectedNodeName,
+                  onSelected: (val) => setState(() => selectedNodeName = val), fieldKey: _keyNodeName)),
+                const SizedBox(width: 20),
+                Expanded(child: DropdownField(label: 'Select Area Group', items: areaGroups,
+                  currentValue: selectedAreaGroup, onChanged: (val) => setState(() => selectedAreaGroup = val))),
+              ])),
               Padding(padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24), child: Row(children: [
                 Expanded(child: SearchField(label: 'Select Domain', hint: 'Type to search domain...',
                   items: domains, initialValue: selectedDomain,
@@ -568,26 +609,53 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
               ])),
             ],
 
+            // ── Phase 2 ──
             if (_currentPhase == 2) ...[
               _buildStepHeader('2. ข้อมูล LSW Network'),
               Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+                // Site Code + Site Name
                 Row(children: [
                   Expanded(child: SearchField(label: 'Search Site Code LSW', hint: 'e.g., BCH-5012-UR',
                     items: siteCodes, initialValue: selectedSiteCode,
                     onSelected: (val) {
+                      final site = sitesRaw.firstWhere((s) => s['Site_code'].toString() == val, orElse: () => {});
                       setState(() {
                         selectedSiteCode = val;
+                        selectedSiteName = site.isNotEmpty ? site['Site_code'].toString() : null;
                         selectedNodeNetworkId = null; selectedNodeNwID = null;
                         selectedPortNetwork = null;   selectedPortNetworkId = null;
                         selectedSwitchNwId = null;    selectedIpNetwork = null;
                         selectedIpNetworkId = null;
-                        networkNodesRaw = [];
+                        networkNodesRaw = [];         networkPortsByNode = {};
                         _tempSelectedPorts.clear();   _tempIpNetworks.clear();
                       });
                       _loadNetworkNodesBySite(val);
                     })),
+                  const SizedBox(width: 20),
+                  // Site Name (read-only, auto-filled)
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Site Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300)),
+                      child: Row(children: [
+                        Icon(Icons.location_on_outlined, size: 18, color: Colors.grey.shade400),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(
+                          selectedSiteName ?? 'Auto-filled from Site Code',
+                          style: TextStyle(color: selectedSiteName != null ? const Color(0xFF0F172A) : Colors.grey.shade400, fontSize: 14),
+                        )),
+                      ]),
+                    ),
+                  ])),
                 ]),
 
+                // Loading / count badge
                 if (selectedSiteCode?.isNotEmpty ?? false) ...[
                   const SizedBox(height: 12),
                   Row(children: [
@@ -604,23 +672,45 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                       style: TextStyle(
                         fontSize: 13,
                         color: (!_isLoadingNodes && networkNodesRaw.isEmpty) ? Colors.orange.shade700 : Colors.blueGrey.shade700,
-                        fontStyle: FontStyle.italic,
-                      ),
+                        fontStyle: FontStyle.italic),
                     ),
                   ]),
                 ],
 
+                // Site info banner
                 if (!_isLoadingNodes && (selectedSiteCode?.isNotEmpty ?? false)) ...[
                   const SizedBox(height: 30),
+                  if (selectedSiteCode != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50, borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.blue.shade100)),
+                      child: Row(children: [
+                        Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                        const SizedBox(width: 8),
+                        Text('Site Code: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue.shade700)),
+                        Text(selectedSiteCode!, style: TextStyle(fontSize: 13, color: Colors.blue.shade700)),
+                        if (selectedSiteName != null) ...[
+                          Text('  |  Site Name: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue.shade700)),
+                          Text(selectedSiteName!, style: TextStyle(fontSize: 13, color: Colors.blue.shade700)),
+                        ],
+                      ]),
+                    ),
+
                   NetworkSelectionTable(
                     networkNodesRaw: networkNodesRaw,
-                    networkPortsRaw: networkPortsRaw,
-                    networkPorts: networkPorts,
+                    networkPortsByNode: networkPortsByNode,
+                    loadingPortsForNode: _loadingPortsForNode,
                     ipNetworkList: ipNetworkList,
                     ipRaw: ipRaw,
                     selectedNodeNetworkId: selectedNodeNetworkId,
+                    siteCode: selectedSiteCode,
                     tempSelectedPorts: _tempSelectedPorts,
                     tempIpNetworks: _tempIpNetworks,
+                    onNodeExpanded: (nodeId) => _loadPortsForNode(nodeId),
+                    onShowDiagram: _submitData,
                     onPortChanged: (netId, val) => setState(() => _tempSelectedPorts[netId] = val),
                     onIpChanged: (netId, val) => setState(() => _tempIpNetworks[netId] = val),
                     onSelect: (netId, nodeNwID, port, portId, switchNwId, ip, ipId) {
@@ -657,13 +747,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                     icon: const Icon(Icons.arrow_forward, size: 20),
                     label: const Text('Next Step', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))
                 else
-                  ElevatedButton.icon(
-                    onPressed: _submitData,
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF28A745), foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4))),
-                    icon: const Icon(Icons.auto_graph, size: 20),
-                    label: const Text('View Topology Diagram', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                  const SizedBox.shrink(),
               ]),
             ),
           ]),
@@ -697,6 +781,49 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   // ════════════════════════════════════════════
   //  HELPER WIDGETS
   // ════════════════════════════════════════════
+
+  Widget _buildSidebarItem(IconData icon, String label, int index) {
+    final isSelected = _selectedMenuIndex == index;
+    return ListTile(
+      leading: Icon(icon, color: isSelected ? Colors.blueAccent : Colors.white54, size: 20),
+      title: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.white70,
+        fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      tileColor: isSelected ? Colors.white.withOpacity(0.08) : Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      onTap: () => setState(() => _selectedMenuIndex = index),
+    );
+  }
+
+  Widget _buildPhaseIndicator(int phase, String label, bool isActive) {
+    return Column(children: [
+      Container(width: 32, height: 32,
+        decoration: BoxDecoration(shape: BoxShape.circle,
+          color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade300),
+        child: Center(child: Text('$phase', style: TextStyle(
+          color: isActive ? Colors.white : Colors.grey.shade600, fontWeight: FontWeight.bold)))),
+      const SizedBox(height: 4),
+      Text(label, style: TextStyle(fontSize: 12,
+        color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade500,
+        fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+    ]);
+  }
+
+  Widget _buildStepHeader(String title) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
+      child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))));
+  }
+
+  InputDecoration _searchDecor(String hint, IconData icon) {
+    return InputDecoration(
+      hintText: hint, prefixIcon: Icon(icon, size: 18, color: Colors.grey.shade400),
+      filled: true, fillColor: Colors.grey.shade50,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade200)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade200)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5)));
+  }
 
   Widget _buildNodeIdField() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -757,48 +884,5 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
           });
       }),
     ]);
-  }
-
-  Widget _buildSidebarItem(IconData icon, String title, int index) {
-    final isActive = _selectedMenuIndex == index;
-    return InkWell(
-      onTap: () => setState(() => _selectedMenuIndex = index),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isActive ? const Color(0xFF0056B3).withOpacity(0.15) : Colors.transparent,
-          border: Border(left: BorderSide(color: isActive ? const Color(0xFF0056B3) : Colors.transparent, width: 4))),
-        child: ListTile(
-          leading: Icon(icon, color: isActive ? Colors.white : Colors.grey.shade400, size: 22),
-          title: Text(title, style: TextStyle(color: isActive ? Colors.white : Colors.grey.shade400,
-            fontSize: 14, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)))));
-  }
-
-  Widget _buildPhaseIndicator(int step, String title, bool isActive) {
-    return Row(children: [
-      Container(width: 32, height: 32,
-        decoration: BoxDecoration(color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade300, shape: BoxShape.circle),
-        child: Center(child: Text(step.toString(), style: TextStyle(color: isActive ? Colors.white : Colors.grey.shade600, fontWeight: FontWeight.bold)))),
-      const SizedBox(width: 12),
-      Text(title, style: TextStyle(fontWeight: FontWeight.bold,
-        color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade500, fontSize: 16)),
-    ]);
-  }
-
-  Widget _buildStepHeader(String title) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      decoration: BoxDecoration(color: const Color(0xFFF1F5F9),
-        border: Border.symmetric(horizontal: BorderSide(color: Colors.grey.shade300))),
-      child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))));
-  }
-
-  InputDecoration _searchDecor(String hint, IconData icon) {
-    return InputDecoration(
-      hintText: hint, prefixIcon: Icon(icon, color: Colors.grey),
-      filled: true, fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF0056B3), width: 2)));
   }
 }

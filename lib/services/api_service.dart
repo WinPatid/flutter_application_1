@@ -16,6 +16,76 @@ class ApiService {
     return [];
   }
 
+  // ─── Domain CRUD ───
+  Future<bool> createDomain(String name, int? vlan) async {
+    final res = await http.post(Uri.parse('$baseUrl/domains'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'Domain_Name': name, 'Vlan': vlan}));
+    return res.statusCode == 201;
+  }
+
+  Future<bool> updateDomain(int id, String name, int? vlan) async {
+    final res = await http.put(Uri.parse('$baseUrl/domains/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'Domain_Name': name, 'Vlan': vlan}));
+    return res.statusCode == 200;
+  }
+
+  Future<bool> deleteDomain(int id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/domains/$id'));
+    return res.statusCode == 204;
+  }
+
+  // ─── IP CRUD ───
+  Future<List<Map<String, dynamic>>> fetchIpsWithStatus(int domainId) async {
+    final res = await http.get(Uri.parse('$baseUrl/domains/$domainId/ips-status'));
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  Future<bool> createIp(int domainId, String ip, int? prefix) async {
+    final res = await http.post(Uri.parse('$baseUrl/domains/$domainId/ips'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'IP': ip, 'Prefix': prefix}));
+    return res.statusCode == 201;
+  }
+
+  Future<bool> updateIp(int id, String ip, int? prefix) async {
+    final res = await http.put(Uri.parse('$baseUrl/ips/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'IP': ip, 'Prefix': prefix}));
+    return res.statusCode == 200;
+  }
+
+  Future<bool> deleteIp(int id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/ips/$id'));
+    return res.statusCode == 204;
+  }
+
+  // ─── Bulk Import ───
+  Future<Map<String, dynamic>> bulkImport(List<Map<String, dynamic>> rows) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/connections/bulk-import'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(rows),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body);
+    }
+    throw Exception('Bulk import failed: ${res.statusCode}');
+  }
+
+  // ─── Network Node Ports (template + status) ───
+  Future<List<Map<String, dynamic>>> fetchNetworkNodePorts(int nodeId) async {
+    final res = await http.get(Uri.parse('$baseUrl/network-nodes/$nodeId/ports'));
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
   // ─── Network Nodes ───
   Future<List<Map<String, dynamic>>> fetchNetworkNodes({String? search, String? siteCode}) async {
     final params = <String, String>{};

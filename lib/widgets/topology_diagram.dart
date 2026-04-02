@@ -17,7 +17,6 @@ class TopologyDiagram extends StatelessWidget {
   final String? selectedModel;
   final bool isConnectionTested;
 
-  // IDs สำหรับ submit
   final int? selectedNodeAcID;
   final int? selectedTemplateId;
   final int? selectedIpAccessId;
@@ -73,6 +72,7 @@ class TopologyDiagram extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -84,6 +84,8 @@ class TopologyDiagram extends StatelessWidget {
           const SizedBox(height: 10),
           const Divider(thickness: 1),
           const SizedBox(height: 30),
+
+          // Diagram
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -118,80 +120,66 @@ class TopologyDiagram extends StatelessWidget {
               ),
             ],
           ),
+
           const SizedBox(height: 40),
           const Divider(thickness: 1),
           const SizedBox(height: 20),
+
+          // Bottom — เอา Test Connection ออกแล้ว เหลือแค่ Back + Confirm
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              ElevatedButton.icon(
-                onPressed: onTestConnection,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF17A2B8), foregroundColor: Colors.white,
+              OutlinedButton(
+                onPressed: onBack,
+                style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  side: BorderSide(color: Colors.grey.shade400),
+                ),
+                child: const Text('Back to Edit', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  if (selectedNodeAcID == null || selectedTemplateId == null ||
+                      selectedIpAccessId == null || selectedModelId == null ||
+                      selectedNodeNwID == null || selectedPortNetworkId == null ||
+                      selectedIpNetworkId == null || selectedSwitchNwId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('❌ กรุณากรอกข้อมูลให้ครบก่อน Confirm'), backgroundColor: Colors.red));
+                    return;
+                  }
+                  final payload = {
+                    'access_node_id':     selectedNodeAcID,
+                    'access_switch_id':   0,
+                    'access_port_id':     0,
+                    'access_ip_id':       selectedIpAccessId,
+                    'access_template_id': selectedTemplateId,
+                    'access_model_id':    selectedModelId,
+                    'network_node_id':    selectedNodeNwID,
+                    'network_switch_id':  selectedSwitchNwId,
+                    'network_port_id':    selectedPortNetworkId,
+                    'network_ip_id':      selectedIpNetworkId,
+                    'status':             'planned',
+                  };
+                  final ok = await api.submitReservation(payload);
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  if (ok) {
+                    onSuccess();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('✅ Network Configured Successfully!'), backgroundColor: Colors.green));
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('❌ บันทึกไม่สำเร็จ กรุณาตรวจสอบข้อมูล'), backgroundColor: Colors.red));
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF28A745),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 ),
-                icon: const Icon(Icons.wifi_protected_setup, size: 20),
-                label: const Text('Test Connection', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-              ),
-              Row(
-                children: [
-                  OutlinedButton(
-                    onPressed: onBack,
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                      side: BorderSide(color: Colors.grey.shade400),
-                    ),
-                    child: const Text('Back to Edit', style: TextStyle(color: Colors.grey)),
-                  ),
-                  const SizedBox(width: 15),
-                  ElevatedButton.icon(
-                    onPressed: isConnectionTested ? () async {
-                      if (selectedNodeAcID == null || selectedTemplateId == null ||
-                          selectedIpAccessId == null || selectedModelId == null ||
-                          selectedNodeNwID == null || selectedPortNetworkId == null ||
-                          selectedIpNetworkId == null || selectedSwitchNwId == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('❌ กรุณากรอกข้อมูลให้ครบก่อน Confirm'), backgroundColor: Colors.red));
-                        return;
-                      }
-                      final payload = {
-                        'access_node_id':     selectedNodeAcID,
-                        'access_switch_id':   0,
-                        'access_port_id':     0,
-                        'access_ip_id':       selectedIpAccessId,
-                        'access_template_id': selectedTemplateId,
-                        'access_model_id':    selectedModelId,
-                        'network_node_id':    selectedNodeNwID,
-                        'network_switch_id':  selectedSwitchNwId,
-                        'network_port_id':    selectedPortNetworkId,
-                        'network_ip_id':      selectedIpNetworkId,
-                        'status':             'planned',
-                      };
-                      final ok = await api.submitReservation(payload);
-                      if (!context.mounted) return;
-                      Navigator.pop(context);
-                      if (ok) {
-                        onSuccess();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('✅ Network Configured Successfully!'), backgroundColor: Colors.green));
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('❌ บันทึกไม่สำเร็จ กรุณาตรวจสอบข้อมูล'), backgroundColor: Colors.red));
-                      }
-                    } : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isConnectionTested ? const Color(0xFF28A745) : Colors.grey.shade300,
-                      foregroundColor: isConnectionTested ? Colors.white : Colors.grey.shade500,
-                      disabledBackgroundColor: Colors.grey.shade300,
-                      disabledForegroundColor: Colors.grey.shade500,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    ),
-                    icon: const Icon(Icons.check_circle, size: 20),
-                    label: const Text('Confirm Configuration', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  ),
-                ],
+                icon: const Icon(Icons.check_circle, size: 20),
+                label: const Text('Confirm Configuration', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
