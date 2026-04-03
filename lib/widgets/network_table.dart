@@ -1,5 +1,6 @@
 // ไฟล์: lib/widgets/network_table.dart
 import 'package:flutter/material.dart';
+import '../core/theme.dart';
 
 class NetworkSelectionTable extends StatelessWidget {
   final List<Map<String, dynamic>> networkNodesRaw;
@@ -62,7 +63,7 @@ class NetworkSelectionTable extends StatelessWidget {
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A88C7), foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryLight, foregroundColor: Colors.white),
             child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
@@ -83,7 +84,7 @@ class NetworkSelectionTable extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Available Network Nodes',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.dark)),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
@@ -247,7 +248,7 @@ class NetworkSelectionTable extends StatelessWidget {
                                   ? () => _showTestPopup(context, netId, nodeName)
                                   : null,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF17A2B8),
+                                  backgroundColor: AppColors.info,
                                   foregroundColor: Colors.white,
                                   disabledBackgroundColor: Colors.grey.shade200,
                                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -282,7 +283,7 @@ class NetworkSelectionTable extends StatelessWidget {
                                   }
                                 : null,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isSelected ? Colors.green : const Color(0xFF0056B3),
+                                backgroundColor: isSelected ? Colors.green : AppColors.primary,
                                 foregroundColor: Colors.white,
                                 disabledBackgroundColor: Colors.grey.shade200,
                                 padding: const EdgeInsets.symmetric(vertical: 14),

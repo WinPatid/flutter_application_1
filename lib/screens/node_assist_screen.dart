@@ -1,14 +1,19 @@
 // ไฟล์: lib/screens/node_assist_screen.dart
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../core/theme.dart';
 import '../widgets/search_field.dart';
 import '../widgets/dropdown_field.dart';
 import '../widgets/network_table.dart';
 import '../widgets/topology_diagram.dart';
+import '../widgets/sidebar/app_sidebar.dart';
+import '../widgets/sidebar/top_bar.dart';
+import '../widgets/dashboard/node_data_table.dart';
 import 'login_screen.dart';
 import 'bulk_import_screen.dart';
 import 'domain_screen.dart';
-import 'site_screen.dart'; // 🚨 เพิ่ม Import ตรงนี้นะครับ 🚨
+import 'model_screen.dart';
+import 'site_screen.dart';
 
 class NodeAssistScreen extends StatefulWidget {
   const NodeAssistScreen({super.key});
@@ -166,7 +171,12 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     setState(() {
       selectedDomainId    = id;
       ipRaw               = List<Map<String, dynamic>>.from(ips);
-      ipList              = ips.map((ip) => ip['IP'].toString()).toList();
+      // แสดง "10.98.4.1/24" เพื่อให้เห็น prefix
+      ipList              = ips.map((ip) {
+        final addr   = ip['IP'].toString();
+        final prefix = ip['Prefix'];
+        return prefix != null ? '$addr/$prefix' : addr;
+      }).toList();
       ipNetworkList       = List.from(ipList);
       selectedIpAddress   = null;
       selectedIpAccessId  = null;
@@ -285,12 +295,12 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
-                    colors: [Color(0xFF0056B3), Color(0xFF4A88C7)],
+                    colors: [AppColors.primary, AppColors.primaryLight],
                     begin: Alignment.topLeft, end: Alignment.bottomRight)),
                 child: const Icon(Icons.person, color: Colors.white, size: 44),
               ),
               const SizedBox(height: 16),
-              const Text('Admin User', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+              const Text('Admin User', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.dark)),
               const SizedBox(height: 4),
               Text('Network Engineer', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
               const SizedBox(height: 24),
@@ -332,7 +342,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     return Row(children: [
       Icon(icon, size: 18, color: Colors.blueAccent),
       const SizedBox(width: 10),
-      Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+      Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.dark)),
       Expanded(child: Text(value, style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
     ]);
   }
@@ -345,123 +355,35 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Row(
-        children: [
-          // ─── Sidebar ───
-          Container(
-            width: 240,
-            color: const Color(0xFF1A1D23),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-                  child: Row(children: [
-                    const Icon(Icons.hub_outlined, color: Colors.blueAccent, size: 28),
-                    const SizedBox(width: 12),
-                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
-                      Text('NODE ASSIST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1)),
-                      Text('PRO', style: TextStyle(color: Colors.blueAccent, fontSize: 11, letterSpacing: 3)),
-                    ]),
-                  ]),
-                ),
-                const Divider(color: Colors.white12, height: 1),
-                const SizedBox(height: 8),
-                _buildSidebarItem(Icons.dashboard_outlined,   'Dashboard',        0),
-                _buildSidebarItem(Icons.add_circle_outline,   'Search & Reserve', 1),
-                _buildSidebarItem(Icons.hub_outlined,         'Topology Map',     2),
-                _buildSidebarItem(Icons.upload_file_outlined, 'Bulk Import',      3),
-                _buildSidebarItem(Icons.dns_outlined,         'Domain & IP',      4),
-                // 🚨 เมนูใหม่ที่เพิ่มเข้ามาครับ 🚨
-                _buildSidebarItem(Icons.business_outlined,    'Site Code',        5), 
-                const Spacer(),
-                const Divider(color: Colors.white12, height: 1),
-                ListTile(
-                  leading: const Icon(Icons.logout, color: Colors.redAccent, size: 20),
-                  title: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontSize: 14)),
-                  onTap: _handleLogout,
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
+      body: Row(children: [
+
+        // ─── Sidebar ───
+        AppSidebar(
+          selectedIndex: _selectedMenuIndex,
+          onItemTap: (i) => setState(() => _selectedMenuIndex = i),
+          onLogout: _handleLogout,
+        ),
+
+        // ─── Main Content ───
+        Expanded(child: Column(children: [
+
+          // Top bar
+          TopBar(
+            title: TopBar.titleForIndex(_selectedMenuIndex),
+            onAvatarTap: _showAdminPopup,
           ),
 
-          // ─── Main Content ───
-          Expanded(
-            child: Column(
-              children: [
-                // Top bar
-                Container(
-                  height: 64,
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _selectedMenuIndex == 0 ? 'Dashboard'
-                          : _selectedMenuIndex == 1 ? 'Search & Reserve'
-                          : _selectedMenuIndex == 2 ? 'Topology Map'
-                          : _selectedMenuIndex == 3 ? 'Bulk Import'
-                          : _selectedMenuIndex == 4 ? 'Domain & IP'
-                          : 'Site Code', // อัพเดตชื่อหัวข้อตามเมนูใหม่
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                      ),
-                      // Admin User Button
-                      InkWell(
-                        onTap: _showAdminPopup,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade200),
-                            borderRadius: BorderRadius.circular(8)),
-                          child: Row(children: [
-                            Container(
-                              width: 32, height: 32,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [Color(0xFF0056B3), Color(0xFF4A88C7)],
-                                  begin: Alignment.topLeft, end: Alignment.bottomRight)),
-                              child: const Icon(Icons.person, color: Colors.white, size: 18),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              const Text('Admin User', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
-                              Text('Network Engineer', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-                            ]),
-                            const SizedBox(width: 8),
-                            Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade400, size: 18),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Page content (ส่วนนี้จัดการการแสดงผลหน้าจอต่างๆ)
-                Expanded(
-                  child: _selectedMenuIndex == 0
-                    ? _buildDashboardPage()
-                    : _selectedMenuIndex == 1
-                      ? _buildSearchAndReservePage()
-                      : _selectedMenuIndex == 2
-                        ? _buildTopologyMockPage()
-                        : _selectedMenuIndex == 3
-                          ? const BulkImportScreen()
-                          : _selectedMenuIndex == 4
-                            ? const DomainScreen()
-                            : const SiteScreen(), // 🚨 ผูกหน้าจอใหม่เข้ากับ Index ที่ 5
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+          // Page content
+          Expanded(child:
+            _selectedMenuIndex == 0 ? _buildDashboardPage()
+            : _selectedMenuIndex == 1 ? _buildSearchAndReservePage()
+            : _selectedMenuIndex == 2 ? _buildTopologyMockPage()
+            : _selectedMenuIndex == 3 ? const BulkImportScreen()
+            : _selectedMenuIndex == 4 ? const DomainScreen()
+            : _selectedMenuIndex == 5 ? const ModelScreen()
+            : const SiteScreen()),
+        ])),
+      ]),
     );
   }
 
@@ -470,77 +392,22 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   // ════════════════════════════════════════════
 
   Widget _buildDashboardPage() {
-    final filtered = _mockTableData.where((row) {
-      final matchId   = row['id'].toString().contains(_searchTableId);
-      final matchName = row['name'].toString().toLowerCase().contains(_searchTableName.toLowerCase());
-      return matchId && matchName;
-    }).toList();
-
     return Padding(
       padding: const EdgeInsets.all(32),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Row(children: [
-              Expanded(child: TextField(onChanged: (v) => setState(() => _searchTableId = v), decoration: _searchDecor('Search ID...', Icons.search))),
-              const SizedBox(width: 16),
-              Expanded(child: TextField(onChanged: (v) => setState(() => _searchTableName = v), decoration: _searchDecor('Search Name...', Icons.search))),
-            ]),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
-                  columns: const [
-                    DataColumn(label: Text('Node ID',   style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Node Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Status',    style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Action',    style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: filtered.map((node) {
-                    final isAvailable = node['isAvailable'] as bool;
-                    return DataRow(cells: [
-                      DataCell(Text(node['id'], style: const TextStyle(fontWeight: FontWeight.bold))),
-                      DataCell(Text(node['name'], overflow: TextOverflow.ellipsis)),
-                      DataCell(Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isAvailable ? Colors.green.shade50 : Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: isAvailable ? Colors.green.shade200 : Colors.red.shade200)),
-                        child: Text(isAvailable ? 'Available' : 'In Use',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
-                            color: isAvailable ? Colors.green.shade700 : Colors.red.shade700)),
-                      )),
-                      DataCell(Row(children: [
-                        if (isAvailable)
-                          ElevatedButton.icon(
-                            onPressed: () { _clearData(); setState(() { selectedNodeId = node['id']; _selectedMenuIndex = 1; _autocompleteKey = UniqueKey(); }); },
-                            icon: const Icon(Icons.touch_app, size: 16),
-                            label: const Text('เลือก', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              minimumSize: const Size(0, 36),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))),
-                          ),
-                      ])),
-                    ]);
-                  }).toList(),
-                ),
-              ),
-            ),
-          ),
-        ]),
+      child: NodeDataTable(
+        data: _mockTableData,
+        searchId: _searchTableId,
+        searchName: _searchTableName,
+        onSearchIdChanged:   (v) => setState(() => _searchTableId   = v),
+        onSearchNameChanged: (v) => setState(() => _searchTableName = v),
+        onSelect: (node) {
+          _clearData();
+          setState(() {
+            selectedNodeId     = node['id'];
+            _selectedMenuIndex = 1;
+            _autocompleteKey   = UniqueKey();
+          });
+        },
       ),
     );
   }
@@ -555,7 +422,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
         child: Row(children: [
           _buildPhaseIndicator(1, "ข้อมูล LSW Access", _currentPhase >= 1),
-          Expanded(child: Divider(color: _currentPhase == 2 ? const Color(0xFF0056B3) : Colors.grey.shade300, thickness: 2)),
+          Expanded(child: Divider(color: _currentPhase == 2 ? AppColors.primary : Colors.grey.shade300, thickness: 2)),
           _buildPhaseIndicator(2, "ข้อมูล LSW Network", _currentPhase == 2),
         ]),
       ),
@@ -589,11 +456,13 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                     if (d.isNotEmpty) _loadIpsByDomain(val);
                   }, fieldKey: _keyDomain, showAllOnEmpty: true)),
                 const SizedBox(width: 20),
-                Expanded(child: SearchField(label: 'Search IP Assist', hint: 'e.g., 10.98.4.200...',
+                Expanded(child: SearchField(label: 'Search IP Assist', hint: 'e.g., 10.98.4.200/24...',
                   items: ipList, initialValue: selectedIpAddress,
                   onSelected: (val) {
-                    final ip = ipRaw.firstWhere((i) => i['IP'].toString() == val, orElse: () => {});
-                    setState(() { selectedIpAddress = val; selectedIpAccessId = ip.isNotEmpty ? ip['IP_id'] as int : null; });
+                    // val อาจเป็น "10.98.4.1/24" ต้องตัด /prefix ออกก่อนหา IP_id
+                    final ipAddr = val.contains('/') ? val.split('/').first : val;
+                    final ip = ipRaw.firstWhere((i) => i['IP'].toString() == ipAddr, orElse: () => {});
+                    setState(() { selectedIpAddress = ipAddr; selectedIpAccessId = ip.isNotEmpty ? ip['IP_id'] as int : null; });
                   }, isDisabled: selectedDomain == null, fieldKey: _keyIpAccess)),
               ])),
               Padding(padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24), child: Row(children: [
@@ -641,7 +510,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                   const SizedBox(width: 20),
                   // Site Name (read-only, auto-filled)
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Site Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
+                    const Text('Site Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textSecondary)),
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -654,7 +523,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                         const SizedBox(width: 8),
                         Expanded(child: Text(
                           selectedSiteName ?? 'Auto-filled from Site Code',
-                          style: TextStyle(color: selectedSiteName != null ? const Color(0xFF0F172A) : Colors.grey.shade400, fontSize: 14),
+                          style: TextStyle(color: selectedSiteName != null ? AppColors.dark : Colors.grey.shade400, fontSize: 14),
                         )),
                       ]),
                     ),
@@ -735,7 +604,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             // Bottom bar
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              decoration: BoxDecoration(color: const Color(0xFFF8F9FA), border: Border(top: BorderSide(color: Colors.grey.shade300))),
+              decoration: BoxDecoration(color: AppColors.surface, border: Border(top: BorderSide(color: Colors.grey.shade300))),
               child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 if (_currentPhase == 2)
                   OutlinedButton.icon(onPressed: () => setState(() => _currentPhase = 1),
@@ -747,7 +616,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                 if (_currentPhase == 1)
                   ElevatedButton.icon(
                     onPressed: () => setState(() => _currentPhase = 2),
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4))),
                     icon: const Icon(Icons.arrow_forward, size: 20),
@@ -779,7 +648,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
       ElevatedButton.icon(
         onPressed: () => setState(() => _selectedMenuIndex = 1),
         icon: const Icon(Icons.add), label: const Text('Create New Reservation'),
-        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
+        style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16))),
     ]));
   }
@@ -788,28 +657,16 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   //  HELPER WIDGETS
   // ════════════════════════════════════════════
 
-  Widget _buildSidebarItem(IconData icon, String label, int index) {
-    final isSelected = _selectedMenuIndex == index;
-    return ListTile(
-      leading: Icon(icon, color: isSelected ? Colors.blueAccent : Colors.white54, size: 20),
-      title: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.white70,
-        fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-      tileColor: isSelected ? Colors.white.withOpacity(0.08) : Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      onTap: () => setState(() => _selectedMenuIndex = index),
-    );
-  }
-
   Widget _buildPhaseIndicator(int phase, String label, bool isActive) {
     return Column(children: [
       Container(width: 32, height: 32,
         decoration: BoxDecoration(shape: BoxShape.circle,
-          color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade300),
+          color: isActive ? AppColors.primary : Colors.grey.shade300),
         child: Center(child: Text('$phase', style: TextStyle(
           color: isActive ? Colors.white : Colors.grey.shade600, fontWeight: FontWeight.bold)))),
       const SizedBox(height: 4),
       Text(label, style: TextStyle(fontSize: 12,
-        color: isActive ? const Color(0xFF0056B3) : Colors.grey.shade500,
+        color: isActive ? AppColors.primary : Colors.grey.shade500,
         fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
     ]);
   }
@@ -818,22 +675,12 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
-      child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))));
-  }
-
-  InputDecoration _searchDecor(String hint, IconData icon) {
-    return InputDecoration(
-      hintText: hint, prefixIcon: Icon(icon, size: 18, color: Colors.grey.shade400),
-      filled: true, fillColor: Colors.grey.shade50,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade200)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade200)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5)));
+      child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.dark)));
   }
 
   Widget _buildNodeIdField() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Search Node ID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
+      const Text('Search Node ID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textSecondary)),
       const SizedBox(height: 8),
       LayoutBuilder(builder: (context, constraints) {
         return Autocomplete<String>(

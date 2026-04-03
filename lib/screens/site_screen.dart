@@ -1,6 +1,7 @@
 // ไฟล์: lib/screens/site_screen.dart
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../core/theme.dart';
 
 class SiteScreen extends StatefulWidget {
   const SiteScreen({super.key});
@@ -71,7 +72,7 @@ class _SiteScreenState extends State<SiteScreen> {
               const Text('Site Codes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
               ElevatedButton.icon(
                 onPressed: () => _showSnack('ฟังก์ชัน Add Site รอ Backend จัดการ', Colors.blue),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -113,12 +114,12 @@ class _SiteScreenState extends State<SiteScreen> {
                             onTap: () => _selectSite(s),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              color: isSelected ? const Color(0xFF0056B3).withOpacity(0.08) : Colors.transparent,
+                              color: isSelected ? AppColors.primary.withOpacity(0.08) : Colors.transparent,
                               child: Row(children: [
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(s['Site_code']?.toString() ?? 'Unknown Code',
                                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14,
-                                      color: isSelected ? const Color(0xFF0056B3) : Colors.black87)),
+                                      color: isSelected ? AppColors.primary : Colors.black87)),
                                   Text('Site name: ${s['Site_name']?.toString() ?? '-'}',
                                     style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                                 ])),
@@ -157,7 +158,7 @@ class _SiteScreenState extends State<SiteScreen> {
               if (_selectedSite != null)
                 ElevatedButton.icon(
                   onPressed: () => _showSnack('ฟังก์ชัน Add Node รอ Backend จัดการ', Colors.green),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF28A745), foregroundColor: Colors.white,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add Node', style: TextStyle(fontWeight: FontWeight.bold)),
