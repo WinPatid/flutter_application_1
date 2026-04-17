@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 import '../services/api_service.dart';
+import '../core/theme.dart';
 
 class BulkImportScreen extends StatefulWidget {
-  const BulkImportScreen({super.key});
-
+  final bool canEdit;
+  const BulkImportScreen({super.key, this.canEdit = true});
   @override
   State<BulkImportScreen> createState() => _BulkImportScreenState();
 }
@@ -15,68 +16,57 @@ class BulkImportScreen extends StatefulWidget {
 class _BulkImportScreenState extends State<BulkImportScreen> {
   final _api = ApiService();
 
-  // ─── State ───
-  List<Map<String, dynamic>> _previewRows = [];
-  List<Map<String, dynamic>> _resultRows  = [];
-  bool _isParsing   = false;
-  bool _isImporting = false;
-  bool _isDone      = false;
-  int  _successCount = 0;
-  int  _failedCount  = 0;
-  String? _fileName;
-
-  // ─── Column definitions ───
   static const List<String> _requiredCols = [
-    'node_ac_id', 'domain', 'ip_access', 'model', 'port_access',
-    'site_code', 'node_nw_id', 'ip_network', 'port_network',
+    'node_ac_id','domain','ip_access','model','port_access',
+    'site_code','node_nw_id','ip_network','port_network',
   ];
   static const List<String> _allCols = [
-    'node_ac_id', 'area_group', 'domain', 'ip_access', 'model', 'port_access',
-    'site_code', 'node_nw_id', 'ip_network', 'port_network', 'cid', 'status',
+    'node_ac_id','area_group','domain','ip_access','model','port_access',
+    'site_code','node_nw_id','ip_network','port_network','cid','status',
   ];
 
-  // ════════════════════════════════════════════
-  //  FILE PICK & PARSE
-  // ════════════════════════════════════════════
+  // ── State ──
+  List<Map<String, dynamic>> _rawRows    = [];   // parsed CSV rows
+  List<Map<String, dynamic>> _validated  = [];   // after validate API
+  List<Map<String, dynamic>> _resultRows = [];   // after import
+  bool   _isParsing    = false;
+  bool   _isValidating = false;
+  bool   _isImporting  = false;
+  bool   _isDone       = false;
+  String? _fileName;
 
+  // ── Stats ──
+  int get _totalRows   => _rawRows.length;
+  int get _passCount   => _validated.where((r) => r['_status'] == 'pass').length;
+  int get _dupCount    => _validated.where((r) => r['_status'] == 'dup').length;
+  int get _failCount   => _validated.where((r) => r['_status'] == 'fail').length;
+  int get _successCount => _resultRows.where((r) => r['success'] == true).length;
+  int get _importFail  => _resultRows.where((r) => r['success'] == false).length;
+
+  // ════════════════════════════════════════════
+  //  STEP 1: PICK FILE
+  // ════════════════════════════════════════════
   Future<void> _pickFile() async {
-    setState(() { _isParsing = true; _previewRows = []; _resultRows = []; _isDone = false; });
-
+    setState(() { _isParsing = true; _rawRows = []; _validated = []; _isDone = false; });
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['csv'],
-        withData: true,
-      );
-
+        type: FileType.custom, allowedExtensions: ['csv'], withData: true);
       if (result == null || result.files.isEmpty) {
-        setState(() => _isParsing = false);
-        return;
+        setState(() => _isParsing = false); return;
       }
-
       final file = result.files.first;
       _fileName = file.name;
       final content = utf8.decode(file.bytes!);
       final rows = const CsvToListConverter(eol: '\n').convert(content);
+      if (rows.isEmpty) { _showSnack('ไฟล์ว่างเปล่า', Colors.orange); setState(() => _isParsing = false); return; }
 
-      if (rows.isEmpty) {
-        _showSnack('ไฟล์ว่างเปล่า', Colors.orange);
-        setState(() => _isParsing = false);
-        return;
-      }
-
-      // header row
       final headers = rows.first.map((e) => e.toString().trim().toLowerCase()).toList();
-
-      // เช็ค required columns
       final missing = _requiredCols.where((c) => !headers.contains(c)).toList();
       if (missing.isNotEmpty) {
         _showSnack('ขาด column: ${missing.join(', ')}', Colors.red);
-        setState(() => _isParsing = false);
-        return;
+        setState(() => _isParsing = false); return;
       }
 
-      // parse data rows
       final parsed = <Map<String, dynamic>>[];
       for (var i = 1; i < rows.length; i++) {
         final row = rows[i];
@@ -87,9 +77,9 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
         }
         parsed.add(map);
       }
-
-      setState(() { _previewRows = parsed; _isParsing = false; });
-
+      setState(() { _rawRows = parsed; _isParsing = false; });
+      // validate ทันทีหลังอ่านไฟล์
+      await _validateRows();
     } catch (e) {
       _showSnack('Parse error: $e', Colors.red);
       setState(() => _isParsing = false);
@@ -97,14 +87,75 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
   }
 
   // ════════════════════════════════════════════
-  //  IMPORT
+  //  STEP 2: VALIDATE
   // ════════════════════════════════════════════
-
-  Future<void> _confirmImport() async {
-    setState(() => _isImporting = true);
-
+  Future<void> _validateRows() async {
+    setState(() => _isValidating = true);
     try {
-      final payload = _previewRows.map((r) => {
+      // เช็คซ้ำภายใน CSV เอง
+      final seenIds = <String>{};
+      final dupIds  = <String>{};
+      for (final r in _rawRows) {
+        final key = '${r['node_ac_id']}_${r['ip_access']}';
+        if (seenIds.contains(key)) dupIds.add(key);
+        else seenIds.add(key);
+      }
+
+      // validate กับ DB
+      final payload = _rawRows.map((r) => {
+        'row':          r['row'],
+        'node_ac_id':   int.tryParse(r['node_ac_id'] ?? '') ?? 0,
+        'area_group':   r['area_group'] ?? '',
+        'domain':       r['domain'] ?? '',
+        'ip_access':    r['ip_access'] ?? '',
+        'model':        r['model'] ?? '',
+        'port_access':  r['port_access'] ?? '',
+        'site_code':    r['site_code'] ?? '',
+        'node_nw_id':   int.tryParse(r['node_nw_id'] ?? '') ?? 0,
+        'ip_network':   r['ip_network'] ?? '',
+        'port_network': r['port_network'] ?? '',
+        'cid':          r['cid']?.toString().isNotEmpty == true ? r['cid'] : null,
+        'status':       r['status']?.toString().isNotEmpty == true ? r['status'] : 'planned',
+      }).toList();
+
+      // ยิง validate endpoint
+      final res = await _api.validateBulkImport(payload);
+
+      // รวม result
+      final validated = <Map<String, dynamic>>[];
+      for (var i = 0; i < _rawRows.length; i++) {
+        final raw    = _rawRows[i];
+        final key    = '${raw['node_ac_id']}_${raw['ip_access']}';
+        final isDup  = dupIds.contains(key) && validated.any((v) =>
+          '${v['node_ac_id']}_${v['ip_access']}' == key);
+        final apiRow = res != null && i < res.length ? res[i] : null;
+        final valid  = apiRow?['valid'] == true;
+        final errors = List<String>.from(apiRow?['errors'] ?? []);
+
+        validated.add({
+          ...raw,
+          '_status': isDup ? 'dup' : (valid ? 'pass' : 'fail'),
+          '_errors': isDup ? ['ซ้ำกับ row ก่อนหน้าใน CSV'] : errors,
+        });
+      }
+
+      setState(() { _validated = validated; _isValidating = false; });
+    } catch (e) {
+      _showSnack('Validate error: $e', Colors.red);
+      setState(() => _isValidating = false);
+    }
+  }
+
+  // ════════════════════════════════════════════
+  //  STEP 3: IMPORT (เฉพาะ pass)
+  // ════════════════════════════════════════════
+  Future<void> _confirmImport() async {
+    final passRows = _validated.where((r) => r['_status'] == 'pass').toList();
+    if (passRows.isEmpty) { _showSnack('ไม่มี row ที่ผ่าน validate', Colors.orange); return; }
+
+    setState(() => _isImporting = true);
+    try {
+      final payload = passRows.map((r) => {
         'row':          r['row'],
         'node_ac_id':   int.tryParse(r['node_ac_id'] ?? '') ?? 0,
         'area_group':   r['area_group'] ?? '',
@@ -121,15 +172,11 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
       }).toList();
 
       final result = await _api.bulkImport(payload);
-
       setState(() {
-        _successCount = result['success'] ?? 0;
-        _failedCount  = result['failed']  ?? 0;
-        _resultRows   = List<Map<String, dynamic>>.from(result['results'] ?? []);
-        _isImporting  = false;
-        _isDone       = true;
+        _resultRows  = List<Map<String, dynamic>>.from(result['results'] ?? []);
+        _isImporting = false;
+        _isDone      = true;
       });
-
     } catch (e) {
       _showSnack('Import error: $e', Colors.red);
       setState(() => _isImporting = false);
@@ -137,57 +184,57 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
   }
 
   void _reset() => setState(() {
-    _previewRows = []; _resultRows = []; _isDone = false;
-    _successCount = 0; _failedCount = 0; _fileName = null;
+    _rawRows = []; _validated = []; _resultRows = [];
+    _isDone = false; _fileName = null;
   });
 
   void _showSnack(String msg, Color color) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: color));
+    AppSnackbar.show(context, msg, color: color);
   }
 
   // ════════════════════════════════════════════
   //  BUILD
   // ════════════════════════════════════════════
-
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-        // ─── Upload Zone ───
         _buildUploadZone(),
         const SizedBox(height: 24),
 
-        // ─── Column Guide ───
-        if (_previewRows.isEmpty && !_isDone) _buildColumnGuide(),
+        // Column guide
+        if (_rawRows.isEmpty && !_isDone) _buildColumnGuide(),
 
-        // ─── Preview Table ───
-        if (_previewRows.isNotEmpty && !_isDone) ...[
-          _buildSectionHeader('Preview — ${_previewRows.length} rows จากไฟล์ $_fileName'),
-          const SizedBox(height: 12),
-          _buildPreviewTable(),
+        // Validate summary + table
+        if (_validated.isNotEmpty && !_isDone) ...[
+          _buildValidateSummary(),
+          const SizedBox(height: 16),
+          _buildValidateTable(),
           const SizedBox(height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             OutlinedButton(onPressed: _reset, child: const Text('Cancel')),
             const SizedBox(width: 12),
+            if (widget.canEdit)
             ElevatedButton.icon(
-              onPressed: _isImporting ? null : _confirmImport,
+              onPressed: (_isImporting || _passCount == 0) ? null : _confirmImport,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF28A745), foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
+                backgroundColor: AppColors.success, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
               icon: _isImporting
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                 : const Icon(Icons.upload),
-              label: Text(_isImporting ? 'กำลัง Import...' : 'Confirm Import',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            ),
+              label: Text(_isImporting
+                ? 'กำลัง Import...'
+                : 'Import $_passCount rows ที่ผ่าน',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
           ]),
         ],
 
-        // ─── Result ───
+        // Result
         if (_isDone) ...[
           _buildResultSummary(),
           const SizedBox(height: 16),
@@ -195,11 +242,11 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
           const SizedBox(height: 20),
           ElevatedButton.icon(
             onPressed: _reset,
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
             icon: const Icon(Icons.refresh),
-            label: const Text('Import ใหม่', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
+            label: const Text('Import ใหม่', style: TextStyle(fontWeight: FontWeight.bold))),
         ],
       ]),
     );
@@ -211,31 +258,31 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
 
   Widget _buildUploadZone() {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(40),
+      width: double.infinity, padding: const EdgeInsets.all(36),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300, width: 2),
-      ),
+        color: Colors.white, borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border, width: 2)),
       child: Column(children: [
-        Icon(Icons.upload_file_outlined, size: 56, color: Colors.grey.shade400),
+        Icon(Icons.upload_file_outlined, size: 52,
+          color: _fileName != null ? AppColors.primary : Colors.grey.shade400),
         const SizedBox(height: 12),
-        const Text('อัพโหลดไฟล์ CSV', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(_fileName != null ? _fileName! : 'อัพโหลดไฟล์ Bulk Import CSV',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
+            color: _fileName != null ? AppColors.primary : AppColors.dark)),
         const SizedBox(height: 6),
-        Text('รองรับเฉพาะ .csv เท่านั้น', style: TextStyle(color: Colors.grey.shade500)),
+        Text('รองรับเฉพาะ .csv', style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
         const SizedBox(height: 20),
         ElevatedButton.icon(
-          onPressed: _isParsing ? null : _pickFile,
+          onPressed: (_isParsing || _isValidating) ? null : _pickFile,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14)),
-          icon: _isParsing
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12)),
+          icon: (_isParsing || _isValidating)
+            ? const SizedBox(width: 18, height: 18,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
             : const Icon(Icons.folder_open),
-          label: Text(_isParsing ? 'กำลังอ่านไฟล์...' : 'เลือกไฟล์',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        ),
+          label: Text(_isParsing ? 'กำลังอ่าน...' : _isValidating ? 'กำลัง Validate...' : 'เลือกไฟล์',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
       ]),
     );
   }
@@ -244,112 +291,177 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.blue.shade200)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 18),
+          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 16),
           const SizedBox(width: 8),
-          Text('Column ที่ต้องมีในไฟล์ CSV',
+          Text('Columns ที่ต้องมีใน CSV',
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700)),
         ]),
         const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8,
-          children: _allCols.map((col) {
-            final isRequired = _requiredCols.contains(col);
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: isRequired ? Colors.blue.shade100 : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: isRequired ? Colors.blue.shade300 : Colors.grey.shade300)),
-              child: Text(col, style: TextStyle(
-                fontSize: 12, fontWeight: FontWeight.bold,
-                color: isRequired ? Colors.blue.shade800 : Colors.grey.shade600)),
-            );
-          }).toList()),
+        Wrap(spacing: 8, runSpacing: 8, children: _allCols.map((col) {
+          final req = _requiredCols.contains(col);
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: req ? Colors.blue.shade100 : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: req ? Colors.blue.shade300 : Colors.grey.shade300)),
+            child: Text(col, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
+              color: req ? Colors.blue.shade800 : Colors.grey.shade600)));
+        }).toList()),
         const SizedBox(height: 8),
         Text('สีน้ำเงิน = required, สีเทา = optional',
-          style: TextStyle(fontSize: 12, color: Colors.blue.shade600)),
+          style: TextStyle(fontSize: 11, color: Colors.blue.shade600)),
       ]),
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)));
-  }
-
-  Widget _buildPreviewTable() {
-    final displayCols = _allCols.where((c) =>
-      _previewRows.any((r) => r[c]?.toString().isNotEmpty == true)).toList();
-
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8)),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
-          columnSpacing: 24,
-          columns: [
-            const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
-            ...displayCols.map((c) => DataColumn(
-              label: Text(c, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)))),
-          ],
-          rows: _previewRows.take(50).map((row) => DataRow(cells: [
-            DataCell(Text(row['row'].toString(),
-              style: TextStyle(color: Colors.grey.shade500, fontSize: 12))),
-            ...displayCols.map((c) => DataCell(
-              Text(row[c]?.toString() ?? '-',
-                style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))),
-          ])).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResultSummary() {
+  // ── Validate Summary Cards ──
+  Widget _buildValidateSummary() {
     return Row(children: [
-      _buildStatCard('Total', _previewRows.length, Colors.blue),
-      const SizedBox(width: 16),
-      _buildStatCard('Success', _successCount, Colors.green),
-      const SizedBox(width: 16),
-      _buildStatCard('Failed', _failedCount, Colors.red),
+      _summaryCard('Total',   '$_totalRows', AppColors.primary,  Icons.list_alt_outlined),
+      const SizedBox(width: 12),
+      _summaryCard('ผ่าน ✓',  '$_passCount', AppColors.success,  Icons.check_circle_outline),
+      const SizedBox(width: 12),
+      _summaryCard('ซ้ำ ⚠',   '$_dupCount',  Colors.orange,     Icons.content_copy_outlined),
+      const SizedBox(width: 12),
+      _summaryCard('ไม่ผ่าน ✗','$_failCount', Colors.red,        Icons.cancel_outlined),
     ]);
   }
 
-  Widget _buildStatCard(String label, int count, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+  Widget _summaryCard(String label, String value, Color color, IconData icon) {
+    return Expanded(child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3))),
-      child: Column(children: [
-        Text(count.toString(), style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: color)),
-        Text(label, style: TextStyle(fontSize: 13, color: color)),
+        color: color.withOpacity(0.07), borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.25))),
+      child: Row(children: [
+        Icon(icon, color: color, size: 28),
+        const SizedBox(width: 14),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(value, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: color)),
+          Text(label, style: TextStyle(fontSize: 12, color: color.withOpacity(0.8))),
+        ]),
       ]),
-    );
+    ));
   }
 
-  Widget _buildResultTable() {
+  // ── Validate Table ──
+  Widget _buildValidateTable() {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8)),
+        border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(10)),
       child: Column(children: [
         // header
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(8))),
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+            border: Border(bottom: BorderSide(color: AppColors.border))),
           child: Row(children: [
-            const SizedBox(width: 48, child: Text('ROW', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
-            const SizedBox(width: 80, child: Text('STATUS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
-            Expanded(child: Text('MESSAGE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
+            const SizedBox(width: 44, child: Text('#',    style: _hdStyle)),
+            const SizedBox(width: 90, child: Text('STATUS', style: _hdStyle)),
+            const SizedBox(width: 80, child: Text('NODE ID', style: _hdStyle)),
+            const SizedBox(width: 120, child: Text('IP ACCESS', style: _hdStyle)),
+            const SizedBox(width: 120, child: Text('IP NETWORK', style: _hdStyle)),
+            const SizedBox(width: 80, child: Text('SITE', style: _hdStyle)),
+            const Expanded(child: Text('REMARK', style: _hdStyle)),
+          ]),
+        ),
+        ..._validated.map((r) {
+          final status = r['_status'] as String;
+          final errors = r['_errors'] as List<String>;
+          Color bg, fg, borderC;
+          String badge;
+          IconData badgeIcon;
+          switch (status) {
+            case 'pass':
+              bg = AppColors.availableBg; fg = AppColors.availableText;
+              borderC = AppColors.availableBorder; badge = 'ผ่าน'; badgeIcon = Icons.check_circle;
+              break;
+            case 'dup':
+              bg = Colors.orange.shade50; fg = Colors.orange.shade800;
+              borderC = Colors.orange.shade200; badge = 'ซ้ำ'; badgeIcon = Icons.content_copy;
+              break;
+            default:
+              bg = Colors.red.shade50; fg = Colors.red.shade800;
+              borderC = Colors.red.shade200; badge = 'ไม่ผ่าน'; badgeIcon = Icons.cancel;
+          }
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: bg.withOpacity(0.4),
+              border: Border(
+                top: BorderSide(color: AppColors.border),
+                left: BorderSide(color: fg, width: 3))),
+            child: Row(children: [
+              SizedBox(width: 44,
+                child: Text('${r['row']}', style: TextStyle(
+                  fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey.shade600))),
+              SizedBox(width: 90, child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: bg, borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: borderC)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(badgeIcon, size: 12, color: fg),
+                  const SizedBox(width: 4),
+                  Text(badge, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg)),
+                ]))),
+              SizedBox(width: 80, child: Text(r['node_ac_id']?.toString() ?? '-',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+              SizedBox(width: 120, child: Text(r['ip_access']?.toString() ?? '-',
+                style: const TextStyle(fontSize: 12))),
+              SizedBox(width: 120, child: Text(r['ip_network']?.toString() ?? '-',
+                style: const TextStyle(fontSize: 12))),
+              SizedBox(width: 80, child: Text(r['site_code']?.toString() ?? '-',
+                style: const TextStyle(fontSize: 12))),
+              Expanded(child: errors.isEmpty
+                ? Text('OK', style: TextStyle(fontSize: 11, color: Colors.grey.shade500))
+                : Text(errors.join(' / '),
+                    style: TextStyle(fontSize: 11, color: fg),
+                    overflow: TextOverflow.ellipsis)),
+            ]),
+          );
+        }),
+      ]),
+    );
+  }
+
+  // ── Result Summary ──
+  Widget _buildResultSummary() {
+    return Row(children: [
+      _summaryCard('นำเข้าทั้งหมด', '$_passCount',    AppColors.primary, Icons.upload),
+      const SizedBox(width: 12),
+      _summaryCard('สำเร็จ',        '$_successCount',  AppColors.success, Icons.check_circle_outline),
+      const SizedBox(width: 12),
+      _summaryCard('ล้มเหลว',       '$_importFail',    Colors.red,        Icons.cancel_outlined),
+      const SizedBox(width: 12),
+      _summaryCard('ข้ามไป (ซ้ำ/ไม่ผ่าน)', '${_dupCount + _failCount}',
+        Colors.orange, Icons.skip_next_outlined),
+    ]);
+  }
+
+  Widget _buildResultTable() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(10)),
+      child: Column(children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+            border: Border(bottom: BorderSide(color: AppColors.border))),
+          child: const Row(children: [
+            SizedBox(width: 48, child: Text('ROW',    style: _hdStyle)),
+            SizedBox(width: 90, child: Text('STATUS', style: _hdStyle)),
+            SizedBox(width: 160, child: Text('CID',   style: _hdStyle)),
+            Expanded(      child: Text('MESSAGE',     style: _hdStyle)),
           ]),
         ),
         ..._resultRows.map((r) {
@@ -358,24 +470,37 @@ class _BulkImportScreenState extends State<BulkImportScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: ok ? Colors.green.shade50 : Colors.red.shade50,
-              border: Border(top: BorderSide(color: Colors.grey.shade200))),
+              border: Border(top: BorderSide(color: AppColors.border),
+                left: BorderSide(color: ok ? AppColors.success : Colors.red, width: 3))),
             child: Row(children: [
-              SizedBox(width: 48, child: Text(r['row'].toString(),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-              SizedBox(width: 80, child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              SizedBox(width: 48,
+                child: Text('${r['row']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+              SizedBox(width: 90, child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: ok ? Colors.green.shade100 : Colors.red.shade100,
-                  borderRadius: BorderRadius.circular(4)),
-                child: Text(ok ? 'OK' : 'FAIL',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
-                    color: ok ? Colors.green.shade800 : Colors.red.shade800)))),
+                  color: ok ? AppColors.availableBg : Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: ok ? AppColors.availableBorder : Colors.red.shade300)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(ok ? Icons.check_circle : Icons.cancel, size: 12,
+                    color: ok ? AppColors.availableText : Colors.red.shade700),
+                  const SizedBox(width: 4),
+                  Text(ok ? 'OK' : 'FAIL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
+                    color: ok ? AppColors.availableText : Colors.red.shade700)),
+                ]))),
+              SizedBox(width: 160,
+                child: Text(r['cid']?.toString() ?? '-',
+                  style: const TextStyle(fontSize: 12))),
               Expanded(child: Text(r['message']?.toString() ?? '',
-                style: TextStyle(fontSize: 13, color: ok ? Colors.green.shade700 : Colors.red.shade700))),
+                style: TextStyle(fontSize: 12,
+                  color: ok ? Colors.green.shade700 : Colors.red.shade700))),
             ]),
           );
         }),
       ]),
     );
   }
+
+  static const _hdStyle = TextStyle(fontWeight: FontWeight.bold, fontSize: 11,
+    color: Colors.grey, letterSpacing: 0.5);
 }

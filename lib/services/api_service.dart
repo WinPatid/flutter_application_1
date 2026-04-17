@@ -1,9 +1,21 @@
 // ไฟล์: lib/services/api_service.dart
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String baseUrl = 'http://localhost:8000/api/v1';
+
+  // ─── Dashboard ───
+  Future<Map<String, dynamic>> fetchDashboardNodes() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/access-nodes/dashboard'));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+    } catch (e) {
+      debugPrint('fetchDashboardNodes error: $e');
+    }
+    return {'nodes': [], 'available': [], 'recent': [], 'first_available_idx': null};
+  }
 
   // ─── Access Nodes ───
   Future<List<Map<String, dynamic>>> fetchAccessNodes({String? search}) async {
@@ -14,6 +26,182 @@ class ApiService {
       return List<Map<String, dynamic>>.from(jsonDecode(res.body));
     }
     return [];
+  }
+
+  Future<Map<String, dynamic>?> createNetworkNodeFull({
+    required String nodeName,
+    required int modelId,
+    required int siteId,
+    required int ipId,
+    int? nodeId,
+  }) async {
+    final body = {
+      'node_name': nodeName,
+      'model_id':  modelId,
+      'site_id':   siteId,
+      'ip_id':     ipId,
+      if (nodeId != null) 'node_id': nodeId,
+    };
+    final res = await http.post(Uri.parse('$baseUrl/network-nodes/full'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body));
+    if (res.statusCode == 201) return jsonDecode(res.body);
+    try {
+      final err = jsonDecode(res.body);
+      return {'error': err['detail'] ?? 'เกิดข้อผิดพลาด'};
+    } catch (_) {
+      return {'error': 'เกิดข้อผิดพลาด (${res.statusCode})'};
+    }
+  }
+
+  // ─── Site CRUD ───
+  Future<bool> createSite(String siteCode) async {
+    final res = await http.post(Uri.parse('$baseUrl/sites'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'Site_code': siteCode}));
+    return res.statusCode == 201;
+  }
+
+  Future<bool> updateSite(int id, String siteCode) async {
+    final res = await http.put(Uri.parse('$baseUrl/sites/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'Site_code': siteCode}));
+    return res.statusCode == 200;
+  }
+
+  Future<bool> deleteSite(int id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/sites/$id'));
+    return res.statusCode == 204;
+  }
+
+  // ─── Roles ───
+  Future<List<Map<String, dynamic>>> fetchRoles() async {
+    final res = await http.get(Uri.parse('$baseUrl/roles'));
+    if (res.statusCode == 200) return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> createRole(Map<String, dynamic> payload) async {
+    final res = await http.post(Uri.parse('$baseUrl/roles'),
+      headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
+    if (res.statusCode == 201) return jsonDecode(res.body);
+    try { return {'error': jsonDecode(res.body)['detail']}; } catch (_) { return {'error': 'Error'}; }
+  }
+
+  Future<Map<String, dynamic>?> updateRole(int id, Map<String, dynamic> payload) async {
+    final res = await http.put(Uri.parse('$baseUrl/roles/$id'),
+      headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    try { return {'error': jsonDecode(res.body)['detail']}; } catch (_) { return {'error': 'Error'}; }
+  }
+
+  Future<Map<String, dynamic>?> deleteRole(int id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/roles/$id'));
+    if (res.statusCode == 204) return {'ok': true};
+    try { return {'error': jsonDecode(res.body)['detail']}; } catch (_) { return {'error': 'Error'}; }
+  }
+
+  // ─── Auth ───
+  Future<Map<String, dynamic>?> login(String username, String password) async {
+    try {
+      final res = await http.post(Uri.parse('$baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      final err = jsonDecode(res.body);
+      return {'error': err['detail'] ?? 'Login ไม่สำเร็จ'};
+    } catch (e) { return {'error': e.toString()}; }
+  }
+
+  // ─── Users ───
+  Future<List<Map<String, dynamic>>> fetchUsers() async {
+    final res = await http.get(Uri.parse('$baseUrl/users'));
+    if (res.statusCode == 200) return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> createUser(Map<String, dynamic> payload) async {
+    final res = await http.post(Uri.parse('$baseUrl/users'),
+      headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
+    if (res.statusCode == 201) return jsonDecode(res.body);
+    try { return {'error': jsonDecode(res.body)['detail']}; } catch (_) { return {'error': 'Error'}; }
+  }
+
+  Future<Map<String, dynamic>?> updateUser(int id, Map<String, dynamic> payload) async {
+    final res = await http.put(Uri.parse('$baseUrl/users/$id'),
+      headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    try { return {'error': jsonDecode(res.body)['detail']}; } catch (_) { return {'error': 'Error'}; }
+  }
+
+  Future<bool> deleteUser(int id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/users/$id'));
+    return res.statusCode == 204;
+  }
+
+  // ─── Subnet CSV ───
+  Future<Map<String, dynamic>?> validateSubnetCsv(
+      List<Map<String, dynamic>> rows) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/domains/validate-subnet-csv'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'rows': rows}));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'error': jsonDecode(res.body)['detail'] ?? 'Validate ไม่สำเร็จ'};
+    } catch (e) { return {'error': e.toString()}; }
+  }
+
+  Future<Map<String, dynamic>?> importSubnetCsv(
+      List<Map<String, dynamic>> rows) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/domains/import-subnet-csv'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'rows': rows}));
+      if (res.statusCode == 201) return jsonDecode(res.body);
+      return {'error': jsonDecode(res.body)['detail'] ?? 'Import ไม่สำเร็จ'};
+    } catch (e) { return {'error': e.toString()}; }
+  }
+
+  // ─── Network Node CSV ───
+  Future<Map<String, dynamic>?> validateNetworkNodesCsv(
+      List<Map<String, dynamic>> rows) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/network-nodes/validate-csv'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'rows': rows}));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      final err = jsonDecode(res.body);
+      return {'error': err['detail'] ?? 'Validate ไม่สำเร็จ'};
+    } catch (e) {
+      return {'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>?> bulkImportNetworkNodes(
+      List<Map<String, dynamic>> rows) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/network-nodes/bulk-import'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'rows': rows}));
+      if (res.statusCode == 201) return jsonDecode(res.body);
+      final err = jsonDecode(res.body);
+      return {'error': err['detail'] ?? 'Import ไม่สำเร็จ'};
+    } catch (e) {
+      return {'error': e.toString()};
+    }
+  }
+
+  // ─── Model CSV Import ───
+  Future<Map<String, dynamic>?> importModelsCsv(List<Map<String, dynamic>> rows) async {
+    final res = await http.post(Uri.parse('$baseUrl/models/import-csv'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'rows': rows}));
+    if (res.statusCode == 201) return jsonDecode(res.body);
+    try { return {'error': jsonDecode(res.body)['detail']}; } catch (_) { return {'error': 'Error'}; }
   }
 
   // ─── Model CRUD ───
@@ -123,6 +311,15 @@ class ApiService {
   }
 
   // ─── Bulk Import ───
+  Future<List<Map<String, dynamic>>?> validateBulkImport(List<Map<String, dynamic>> rows) async {
+    try {
+      final res = await http.post(Uri.parse('$baseUrl/connections/validate-bulk'),
+        headers: {'Content-Type': 'application/json'}, body: jsonEncode(rows));
+      if (res.statusCode == 200) return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    } catch (_) {}
+    return null;
+  }
+
   Future<Map<String, dynamic>> bulkImport(List<Map<String, dynamic>> rows) async {
     final res = await http.post(
       Uri.parse('$baseUrl/connections/bulk-import'),

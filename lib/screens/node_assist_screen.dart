@@ -14,11 +14,17 @@ import 'bulk_import_screen.dart';
 import 'domain_screen.dart';
 import 'model_screen.dart';
 import 'site_screen.dart';
+<<<<<<< HEAD
 import 'user_screen.dart';
 // 🧹 ลบ import role_screen.dart ออกไปแล้วครับ
+=======
+import 'network_node_screen.dart';
+import 'user_screen.dart';
+>>>>>>> e9e593148938bd62a592a983205949784f35b82c
 
 class NodeAssistScreen extends StatefulWidget {
-  const NodeAssistScreen({super.key});
+  final Map<String, dynamic>? currentUser;
+  const NodeAssistScreen({super.key, this.currentUser});
 
   @override
   State<NodeAssistScreen> createState() => _NodeAssistScreenState();
@@ -45,6 +51,8 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   int?    selectedNodeAcID;
   String? selectedNodeName;
   String? selectedAreaGroup;
+  final   _nodeNameCtrl = TextEditingController();
+  final   _nodeIdCtrl   = TextEditingController();
   String? selectedDomain;
   int?    selectedDomainId;
   String? selectedIpAddress;
@@ -70,22 +78,6 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   final Map<String, String?> _tempIpNetworks    = {};
 
   bool _isConnectionTested = false;
-
-  // ─── Dashboard mock data ───
-  String _searchTableId   = '';
-  String _searchTableName = '';
-  final List<Map<String, dynamic>> _mockTableData = [
-    {'id': '88860', 'name': 'บุญรอดบริวเวอรี่ คลังบางบัวทอง',              'isAvailable': false},
-    {'id': '88861', 'name': '-',                                             'isAvailable': true},
-    {'id': '88872', 'name': 'NEC Corporation (Thailand) LCo., Ltd.',        'isAvailable': false},
-    {'id': '88895', 'name': 'บ. เถ้าแก่น้อย ฟู้ดแอนด์มาร์เก็ตติ้ง จก.',  'isAvailable': false},
-    {'id': '88920', 'name': '-',                                             'isAvailable': true},
-    {'id': '88938', 'name': 'สำนักงานสรรพากรพื้นที่นนทบุรี',               'isAvailable': false},
-    {'id': '98352', 'name': 'บ. อิทธิพรอิมปอร์ต จก.(หลักสี่)',            'isAvailable': false},
-    {'id': '98424', 'name': '-',                                             'isAvailable': true},
-    {'id': '98447', 'name': 'อาคารการไฟฟ้าส่วนภูมิภาค',                   'isAvailable': false},
-    {'id': '880234','name': 'BCH_17FL / WHB',                               'isAvailable': false},
-  ];
 
   // ─── API Data ───
   List<Map<String, dynamic>> accessNodesRaw   = [];
@@ -169,12 +161,13 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     final domain = domainRaw.firstWhere((d) => d['Domain_Name'] == domainName, orElse: () => {});
     if (domain.isEmpty) return;
     final id  = domain['Domain_id'] as int;
-    final ips = await _api.fetchIpsByDomain(id);
+    final ips = await _api.fetchIpsWithStatus(id);
+    // เฉพาะ IP ที่ยังไม่ได้ใช้งาน
+    final availableIps = ips.where((ip) => ip['in_use'] == false).toList();
     setState(() {
       selectedDomainId    = id;
-      ipRaw               = List<Map<String, dynamic>>.from(ips);
-      // แสดง "10.98.4.1/24" เพื่อให้เห็น prefix
-      ipList              = ips.map((ip) {
+      ipRaw               = availableIps;
+      ipList              = availableIps.map((ip) {
         final addr   = ip['IP'].toString();
         final prefix = ip['Prefix'];
         return prefix != null ? '$addr/$prefix' : addr;
@@ -206,6 +199,8 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
     setState(() {
       selectedNodeId = null;        selectedNodeAcID = null;
       selectedNodeName = null;      selectedAreaGroup = null;
+      _nodeNameCtrl.clear();
+      _nodeIdCtrl.clear();
       selectedDomain = null;        selectedDomainId = null;
       selectedIpAddress = null;     selectedIpAccessId = null;
       selectedModel = null;         selectedModelId = null;
@@ -353,6 +348,13 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
   //  BUILD
   // ════════════════════════════════════════════
 
+  // helper ดึง pageAccess จาก currentUser
+  Map<String, dynamic> get _pageAccess =>
+    Map<String, dynamic>.from(widget.currentUser?['page_access'] ?? {});
+
+  bool _canEdit(String pageName) =>
+    _pageAccess[pageName] == 'edit' || _pageAccess.isEmpty;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -364,6 +366,8 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
           selectedIndex: _selectedMenuIndex,
           onItemTap: (i) => setState(() => _selectedMenuIndex = i),
           onLogout: _handleLogout,
+          pageAccess:  _pageAccess,
+          currentUser: widget.currentUser,
         ),
 
         // ─── Main Content ───
@@ -380,11 +384,20 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             _selectedMenuIndex == 0 ? _buildDashboardPage()
             : _selectedMenuIndex == 1 ? _buildSearchAndReservePage()
             : _selectedMenuIndex == 2 ? _buildTopologyMockPage()
+<<<<<<< HEAD
             : _selectedMenuIndex == 3 ? const BulkImportScreen()
             : _selectedMenuIndex == 4 ? const DomainScreen()
             : _selectedMenuIndex == 5 ? const ModelScreen()
             : _selectedMenuIndex == 6 ? const SiteScreen()
             : const UserScreen()), // 👈 จบที่หน้านี้ครับ
+=======
+            : _selectedMenuIndex == 3 ? BulkImportScreen(canEdit: _canEdit('Bulk Import'))
+            : _selectedMenuIndex == 4 ? DomainScreen(canEdit: _canEdit('Domain & IP'))
+            : _selectedMenuIndex == 5 ? ModelScreen(canEdit: _canEdit('Models'))
+            : _selectedMenuIndex == 6 ? SiteScreen(canEdit: _canEdit('Site Code'))
+            : _selectedMenuIndex == 7 ? NetworkNodeScreen(canEdit: _canEdit('Network Nodes'))
+            : const UserScreen()),
+>>>>>>> e9e593148938bd62a592a983205949784f35b82c
         ])),
       ]),
     );
@@ -396,20 +409,17 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
 
   Widget _buildDashboardPage() {
     return Padding(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(0),
       child: NodeDataTable(
-        data: _mockTableData,
-        searchId: _searchTableId,
-        searchName: _searchTableName,
-        onSearchIdChanged:   (v) => setState(() => _searchTableId   = v),
-        onSearchNameChanged: (v) => setState(() => _searchTableName = v),
         onSelect: (node) {
           _clearData();
           setState(() {
-            selectedNodeId     = node['id'];
+            selectedNodeId   = node['id'];
+            selectedNodeAcID = int.tryParse(node['id']);
             _selectedMenuIndex = 1;
             _autocompleteKey   = UniqueKey();
           });
+          _nodeIdCtrl.text = node['id'];
         },
       ),
     );
@@ -443,9 +453,18 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
               Padding(padding: const EdgeInsets.all(24), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(child: _buildNodeIdField()),
                 const SizedBox(width: 20),
-                Expanded(child: SearchField(label: 'Search Node Name', hint: 'Type to search name',
-                  items: nodeNames, initialValue: selectedNodeName,
-                  onSelected: (val) => setState(() => selectedNodeName = val), fieldKey: _keyNodeName)),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Node Name',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
+                      color: AppColors.textSecondary)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _nodeNameCtrl,
+                    decoration: AppInputDecoration.standard(hint: 'ตั้งชื่อ Node เช่น LSW-BCH-AC-01'),
+                    onChanged: (v) => setState(() =>
+                      selectedNodeName = v.trim().isEmpty ? null : v.trim()),
+                  ),
+                ])),
                 const SizedBox(width: 20),
                 Expanded(child: DropdownField(label: 'Select Area Group', items: areaGroups,
                   currentValue: selectedAreaGroup, onChanged: (val) => setState(() => selectedAreaGroup = val))),
@@ -581,16 +600,12 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
                     networkNodesRaw: networkNodesRaw,
                     networkPortsByNode: networkPortsByNode,
                     loadingPortsForNode: _loadingPortsForNode,
-                    ipNetworkList: ipNetworkList,
-                    ipRaw: ipRaw,
                     selectedNodeNetworkId: selectedNodeNetworkId,
                     siteCode: selectedSiteCode,
                     tempSelectedPorts: _tempSelectedPorts,
-                    tempIpNetworks: _tempIpNetworks,
                     onNodeExpanded: (nodeId) => _loadPortsForNode(nodeId),
                     onShowDiagram: _submitData,
                     onPortChanged: (netId, val) => setState(() => _tempSelectedPorts[netId] = val),
-                    onIpChanged: (netId, val) => setState(() => _tempIpNetworks[netId] = val),
                     onSelect: (netId, nodeNwID, port, portId, switchNwId, ip, ipId) {
                       setState(() {
                         selectedNodeNetworkId = netId;    selectedNodeNwID      = nodeNwID;
@@ -683,62 +698,29 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
 
   Widget _buildNodeIdField() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Search Node ID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textSecondary)),
+      const Text('Node ID', style: TextStyle(
+        fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textSecondary)),
       const SizedBox(height: 8),
-      LayoutBuilder(builder: (context, constraints) {
-        return Autocomplete<String>(
-          key: _autocompleteKey,
-          initialValue: TextEditingValue(text: selectedNodeId ?? ''),
-          optionsBuilder: (tv) {
-            if (tv.text.isEmpty) return const Iterable<String>.empty();
-            final base = int.tryParse(tv.text);
-            if (base != null) return List.generate(5, (i) => (base + i).toString());
-            return nodeIds.where((id) => id.contains(tv.text));
-          },
-          onSelected: (val) {
-            final node = accessNodesRaw.firstWhere((n) => n['NodeAcID'].toString() == val, orElse: () => {});
-            setState(() { selectedNodeId = val; selectedNodeAcID = node.isNotEmpty ? node['NodeAcID'] as int : null; });
-          },
-          fieldViewBuilder: (context, controller, focusNode, _) {
-            return TextField(
-              controller: controller, focusNode: focusNode,
-              onChanged: (val) => setState(() => selectedNodeId = val),
-              decoration: InputDecoration(
-                hintText: 'e.g., 99012', hintStyle: TextStyle(color: Colors.grey.shade400),
-                filled: true, fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Colors.blue, width: 2)),
-                suffixIcon: const Icon(Icons.search, color: Colors.grey, size: 20)));
-          },
-          optionsViewBuilder: (context, onSelected, options) {
-            return Align(alignment: Alignment.topLeft,
-              child: Material(elevation: 4, child: Container(
-                width: constraints.maxWidth, constraints: const BoxConstraints(maxHeight: 250),
-                child: ListView.builder(padding: EdgeInsets.zero, shrinkWrap: true, itemCount: options.length,
-                  itemBuilder: (_, i) {
-                    final option = options.elementAt(i);
-                    final isAvail = int.parse(option) % 2 == 0;
-                    return InkWell(onTap: () => onSelected(option),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
-                        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                          Text(option, style: const TextStyle(fontWeight: FontWeight.w500)),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isAvail ? Colors.green.shade50 : Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: isAvail ? Colors.green.shade200 : Colors.red.shade200)),
-                            child: Text(isAvail ? 'ว่าง' : 'ไม่ว่าง',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
-                                color: isAvail ? Colors.green.shade700 : Colors.red.shade700))),
-                        ])));
-                  }))));
-          });
-      }),
+      TextField(
+        controller: _nodeIdCtrl,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          hintText: 'e.g., 99012',
+          hintStyle: TextStyle(color: Colors.grey.shade400),
+          filled: true, fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4),
+            borderSide: const BorderSide(color: Colors.blue, width: 2)),
+        ),
+        onChanged: (val) => setState(() {
+          selectedNodeId   = val.trim().isEmpty ? null : val.trim();
+          selectedNodeAcID = int.tryParse(val.trim());
+        }),
+      ),
     ]);
   }
 }
