@@ -20,17 +20,53 @@ class SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isSelected = selectedIndex == index;
-    return ListTile(
-      leading: Icon(icon,
-        color: isSelected ? Colors.blueAccent : Colors.white54, size: 20),
-      title: Text(label, style: TextStyle(
-        color: isSelected ? AppColors.sidebarActive : AppColors.sidebarText,
-        fontSize: 14,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-      tileColor: isSelected ? Colors.white.withOpacity(0.08) : Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      onTap: () => onTap(index),
+    final bool isSelected = index == selectedIndex;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onTap(index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.white.withOpacity(0.08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? Colors.white : Colors.white54,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white54,
+                  fontSize: 14,
+                  fontWeight:
+                      isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+              if (isSelected) ...[
+                const Spacer(),
+                Container(
+                  width: 3,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

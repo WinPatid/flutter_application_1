@@ -14,6 +14,8 @@ import 'bulk_import_screen.dart';
 import 'domain_screen.dart';
 import 'model_screen.dart';
 import 'site_screen.dart';
+import 'user_screen.dart';
+// 🧹 ลบ import role_screen.dart ออกไปแล้วครับ
 
 class NodeAssistScreen extends StatefulWidget {
   const NodeAssistScreen({super.key});
@@ -373,7 +375,7 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             onAvatarTap: _showAdminPopup,
           ),
 
-          // Page content
+          // 🧹 คลีนเงื่อนไขหน้าเว็บ กลับมาใช้ UserScreen เป็นหน้าสุดท้าย
           Expanded(child:
             _selectedMenuIndex == 0 ? _buildDashboardPage()
             : _selectedMenuIndex == 1 ? _buildSearchAndReservePage()
@@ -381,7 +383,8 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             : _selectedMenuIndex == 3 ? const BulkImportScreen()
             : _selectedMenuIndex == 4 ? const DomainScreen()
             : _selectedMenuIndex == 5 ? const ModelScreen()
-            : const SiteScreen()),
+            : _selectedMenuIndex == 6 ? const SiteScreen()
+            : const UserScreen()), // 👈 จบที่หน้านี้ครับ
         ])),
       ]),
     );

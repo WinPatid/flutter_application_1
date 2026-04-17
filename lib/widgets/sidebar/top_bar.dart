@@ -8,7 +8,7 @@ class TopBar extends StatelessWidget {
 
   static const List<String> _titles = [
     'Dashboard', 'Search & Reserve', 'Topology Map',
-    'Bulk Import', 'Domain & IP', 'Models', 'Site Code',
+    'Bulk Import', 'Domain & IP', 'Models', 'Site Code', 'Users',
   ];
 
   static String titleForIndex(int index) =>

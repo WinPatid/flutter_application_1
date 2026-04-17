@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../core/theme.dart';
 import 'node_assist_screen.dart';
+import 'forgot_password_screen.dart'; // 📍 จุดที่ 1: เพิ่ม Import ตรงนี้ครับ
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -148,9 +149,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 12),
 
+                // 📍 จุดที่ 2: แก้ตรงปุ่มให้กดแล้วเด้งไปหน้า ForgotPasswordScreen ครับ
                 Align(alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                      );
+                    },
                     child: const Text('Forgot Password?',
                       style: TextStyle(color: AppColors.primary, fontSize: 13)),
                   ),
