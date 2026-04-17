@@ -149,6 +149,7 @@ class TopologyDiagram extends StatelessWidget {
                   }
                   final payload = {
                     'access_node_id':     selectedNodeAcID,
+                    'access_node_name':   selectedNodeName,
                     'access_switch_id':   0,
                     'access_port_id':     0,
                     'access_ip_id':       selectedIpAccessId,

@@ -272,13 +272,88 @@ class AppTheme {
       seedColor: AppColors.primary,
       background: AppColors.background,
     ),
-    fontFamily: 'Roboto',
     useMaterial3: true,
     scaffoldBackgroundColor: AppColors.background,
+    snackBarTheme: const SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+    ),
     appBarTheme: const AppBarTheme(
       backgroundColor: Colors.white,
       foregroundColor: AppColors.dark,
       elevation: 0,
     ),
   );
+}
+
+// ════════════════════════════════════════════
+//  APP SNACKBAR — floating popup
+// ════════════════════════════════════════════
+
+class AppSnackbar {
+  AppSnackbar._();
+
+  static void show(
+    BuildContext context,
+    String message, {
+    Color? color,
+    IconData? icon,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    final bgColor = color ?? AppColors.dark;
+
+    // เลือก icon อัตโนมัติตามสี
+    IconData resolvedIcon = icon ?? _iconForColor(bgColor);
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior:        SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation:       0,
+        duration:        duration,
+        margin: const EdgeInsets.only(
+          bottom: 24, left: 24, right: 24),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color:        bgColor,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color:      Colors.black.withOpacity(0.2),
+                blurRadius: 12,
+                offset:     const Offset(0, 4)),
+            ]),
+          child: Row(children: [
+            Icon(resolvedIcon, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message,
+              style: const TextStyle(
+                color:      Colors.white,
+                fontSize:   14,
+                fontWeight: FontWeight.w500))),
+          ]),
+        ),
+      ));
+  }
+
+  static void success(BuildContext context, String message) =>
+    show(context, message, color: AppColors.success, icon: Icons.check_circle_outline);
+
+  static void error(BuildContext context, String message) =>
+    show(context, message, color: AppColors.danger, icon: Icons.error_outline);
+
+  static void warning(BuildContext context, String message) =>
+    show(context, message, color: const Color(0xFFB45309), icon: Icons.warning_amber_outlined);
+
+  static void info(BuildContext context, String message) =>
+    show(context, message, color: AppColors.info, icon: Icons.info_outline);
+
+  static IconData _iconForColor(Color color) {
+    if (color == AppColors.success) return Icons.check_circle_outline;
+    if (color == AppColors.danger)  return Icons.error_outline;
+    if (color == AppColors.warning) return Icons.warning_amber_outlined;
+    if (color == AppColors.info)    return Icons.info_outline;
+    return Icons.notifications_outlined;
+  }
 }

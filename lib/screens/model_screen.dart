@@ -1,10 +1,13 @@
 // ไฟล์: lib/screens/model_screen.dart
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
 import '../core/theme.dart';
+import 'model_csv_preview_screen.dart';
 
 class ModelScreen extends StatefulWidget {
-  const ModelScreen({super.key});
+  final bool canEdit;
+  const ModelScreen({super.key, this.canEdit = true});
 
   @override
   State<ModelScreen> createState() => _ModelScreenState();
@@ -47,8 +50,74 @@ class _ModelScreenState extends State<ModelScreen> {
   }
 
   // ════════════════════════════════════════════
-  //  MODEL DIALOGS
+  //  CSV IMPORT
   // ════════════════════════════════════════════
+
+  Future<void> _importCsv() async {
+    // เลือกไฟล์ CSV
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom, allowedExtensions: ['csv'],
+      withData: true);
+    if (result == null || result.files.isEmpty) return;
+
+    final bytes  = result.files.first.bytes;
+    if (bytes == null) return;
+
+    final content = String.fromCharCodes(bytes);
+    final lines   = content.split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    if (lines.isEmpty) {
+      AppSnackbar.error(context, 'ไฟล์ CSV ว่างเปล่า');
+      return;
+    }
+
+    // parse header
+    final header = lines.first.split(',').map((h) => h.trim().toLowerCase()).toList();
+    final requiredCols = ['model_name', 'interface_type', 'speed', 'cable_type', 'count'];
+    for (final col in requiredCols) {
+      if (!header.contains(col)) {
+        AppSnackbar.error(context, 'CSV ต้องมี column: $col');
+        return;
+      }
+    }
+
+    // parse rows
+    final rows = <Map<String, dynamic>>[];
+    final errors = <String>[];
+
+    for (int i = 1; i < lines.length; i++) {
+      final cols = lines[i].split(',').map((c) => c.trim()).toList();
+      if (cols.length < header.length) {
+        errors.add('Row $i: column ไม่ครบ');
+        continue;
+      }
+      final row = <String, dynamic>{};
+      for (int j = 0; j < header.length; j++) {
+        row[header[j]] = cols[j];
+      }
+      final count = int.tryParse(row['count']?.toString() ?? '');
+      if (count == null || count <= 0) {
+        errors.add('Row $i: count ต้องเป็นตัวเลขมากกว่า 0');
+        continue;
+      }
+      row['count'] = count;
+      rows.add(row);
+    }
+
+    if (rows.isEmpty) {
+      AppSnackbar.error(context, 'ไม่พบข้อมูลที่ valid ใน CSV');
+      return;
+    }
+
+    // เปิด Preview Screen
+    final imported = await Navigator.push<bool>(context,
+      MaterialPageRoute(builder: (_) => ModelCsvPreviewScreen(rows: rows)));
+    if (imported == true) _fetchModels();
+  }
+
 
   void _showModelDialog({Map<String, dynamic>? existing}) {
     final nameCtrl = TextEditingController(text: existing?['Model_Name'] ?? '');
@@ -86,7 +155,7 @@ class _ModelScreenState extends State<ModelScreen> {
   void _confirmDeleteModel(Map<String, dynamic> model) {
     showDialog(context: context, builder: (ctx) => AlertDialog(
       title: const Text('Delete Model', style: TextStyle(fontWeight: FontWeight.bold)),
-      content: Text('ลบ "${model['Model_Name']}" ออกไหม?\nต้องไม่มี Port Template อยู่ใน Model นี้'),
+      content: Text('ลบ "${model['Model_Name']}" ออกไหม?\nหากมี Node ใช้ Model นี้อยู่จะลบไม่ได้'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
         ElevatedButton(
@@ -100,7 +169,7 @@ class _ModelScreenState extends State<ModelScreen> {
               }
               _fetchModels();
             } else {
-              _showSnack('ลบไม่ได้ — มี Port Template อยู่ใน Model นี้', Colors.red);
+              _showSnack('ลบไม่สำเร็จ', Colors.red);
             }
           },
           child: const Text('Delete'),
@@ -113,55 +182,73 @@ class _ModelScreenState extends State<ModelScreen> {
   //  TEMPLATE DIALOGS
   // ════════════════════════════════════════════
 
+  // ─── Dropdown options ───
+  static const List<String> _interfaceTypes = ['GE', 'FE', 'XGE', '40GE', '100GE'];
+  static const List<String> _speeds         = ['100M', '1G', '10G', '40G', '100G'];
+  static const List<String> _cableTypes     = ['UTP', 'SFP', 'SFP+', 'QSFP+', 'QSFP28'];
+
   void _showTemplateDialog({Map<String, dynamic>? existing}) {
     final nameCtrl  = TextEditingController(text: existing?['Interface_Name'] ?? '');
-    final typeCtrl  = TextEditingController(text: existing?['Interface_Type'] ?? '');
-    final speedCtrl = TextEditingController(text: existing?['speed'] ?? '');
-    final cableCtrl = TextEditingController(text: existing?['cable_type'] ?? '');
+    String? selType  = existing?['Interface_Type'];
+    String? selSpeed = existing?['speed'];
+    String? selCable = existing?['cable_type'];
 
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: Text(existing == null ? 'Add Port Template' : 'Edit Port Template',
-        style: const TextStyle(fontWeight: FontWeight.bold)),
-      content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
-        _buildTextField(nameCtrl, 'Interface Name *', 'e.g., GigabitEthernet0/1'),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: _buildTextField(typeCtrl, 'Interface Type', 'e.g., GE, FE')),
-          const SizedBox(width: 12),
-          Expanded(child: _buildTextField(speedCtrl, 'Speed', 'e.g., 1G, 100M')),
-        ]),
-        const SizedBox(height: 12),
-        _buildTextField(cableCtrl, 'Cable Type', 'e.g., UTP, SFP'),
-      ])),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-          onPressed: () async {
-            if (nameCtrl.text.trim().isEmpty) { _showSnack('กรอกชื่อ Interface ด้วย', Colors.orange); return; }
-            Navigator.pop(ctx);
-            if (existing == null) {
-              await _api.createModelInterface(
-                _selectedModel!['Model_Id'] as int,
-                nameCtrl.text.trim(),
-                typeCtrl.text.trim().isEmpty  ? null : typeCtrl.text.trim(),
-                speedCtrl.text.trim().isEmpty ? null : speedCtrl.text.trim(),
-                cableCtrl.text.trim().isEmpty ? null : cableCtrl.text.trim(),
-              );
-            } else {
-              await _api.updateModelInterface(
-                existing['Template_ID'] as int,
-                nameCtrl.text.trim(),
-                typeCtrl.text.trim().isEmpty  ? null : typeCtrl.text.trim(),
-                speedCtrl.text.trim().isEmpty ? null : speedCtrl.text.trim(),
-                cableCtrl.text.trim().isEmpty ? null : cableCtrl.text.trim(),
-              );
-            }
-            _fetchTemplates(_selectedModel!['Model_Id'] as int);
-          },
-          child: Text(existing == null ? 'Add' : 'Save'),
-        ),
-      ],
+    showDialog(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: Text(existing == null ? 'Add Port Template' : 'Edit Port Template',
+          style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          _buildTextField(nameCtrl, 'Interface Name *', 'e.g., GigabitEthernet0/1'),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: _buildDropdown(
+              label: 'Interface Type',
+              value: selType,
+              items: _interfaceTypes,
+              onChanged: (v) => setD(() => selType = v),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _buildDropdown(
+              label: 'Speed',
+              value: selSpeed,
+              items: _speeds,
+              onChanged: (v) => setD(() => selSpeed = v),
+            )),
+          ]),
+          const SizedBox(height: 12),
+          _buildDropdown(
+            label: 'Cable Type',
+            value: selCable,
+            items: _cableTypes,
+            onChanged: (v) => setD(() => selCable = v),
+          ),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+            onPressed: () async {
+              if (nameCtrl.text.trim().isEmpty) { _showSnack('กรอกชื่อ Interface ด้วย', Colors.orange); return; }
+              Navigator.pop(ctx);
+              if (existing == null) {
+                await _api.createModelInterface(
+                  _selectedModel!['Model_Id'] as int,
+                  nameCtrl.text.trim(),
+                  selType, selSpeed, selCable,
+                );
+              } else {
+                await _api.updateModelInterface(
+                  existing['Template_ID'] as int,
+                  nameCtrl.text.trim(),
+                  selType, selSpeed, selCable,
+                );
+              }
+              _fetchTemplates(_selectedModel!['Model_Id'] as int);
+            },
+            child: Text(existing == null ? 'Add' : 'Save'),
+          ),
+        ],
+      ),
     ));
   }
 
@@ -189,8 +276,7 @@ class _ModelScreenState extends State<ModelScreen> {
   }
 
   void _showSnack(String msg, Color color) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
+    AppSnackbar.show(context, msg, color: color);
   }
 
   // ════════════════════════════════════════════
@@ -204,12 +290,29 @@ class _ModelScreenState extends State<ModelScreen> {
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
         // ─── Panel 1: Model list ───
-        SizedBox(width: 300, child: _buildPanel(
-          title: 'Switch Models',
-          onAdd: () => _showModelDialog(),
-          addLabel: 'Add Model',
-          addColor: AppColors.primary,
-          child: _loadingModels
+        SizedBox(width: 300, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            const Text('Switch Models',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            // Import CSV เท่านั้น — แสดงเฉพาะ canEdit
+            if (widget.canEdit)
+            OutlinedButton.icon(
+              onPressed: _importCsv,
+              icon: const Icon(Icons.upload_file, size: 14),
+              label: const Text('Import CSV', style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                minimumSize: const Size(0, 30),
+                side: const BorderSide(color: AppColors.border)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Expanded(child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(8)),
+            child: ClipRRect(borderRadius: BorderRadius.circular(8), child: _loadingModels
             ? const Center(child: CircularProgressIndicator())
             : _models.isEmpty
               ? _emptyHint('ยังไม่มี Model')
@@ -249,7 +352,8 @@ class _ModelScreenState extends State<ModelScreen> {
                     );
                   },
                 ),
-        )),
+          ))),
+        ])),
 
         const SizedBox(width: 24),
 
@@ -364,6 +468,34 @@ class _ModelScreenState extends State<ModelScreen> {
       child: Text(type, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
         color: isAccess ? Colors.teal.shade700 : Colors.purple.shade700)),
     );
+  }
+
+  Widget _buildDropdown({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textSecondary)),
+      const SizedBox(height: 6),
+      DropdownButtonFormField<String>(
+        value: items.contains(value) ? value : null,
+        hint: Text('เลือก $label', style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+        decoration: InputDecoration(
+          filled: true, fillColor: Colors.white, isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: AppColors.border)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: AppColors.border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+        ),
+        items: items.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+        onChanged: onChanged,
+      ),
+    ]);
   }
 
   Widget _buildTextField(TextEditingController ctrl, String label, String hint) {

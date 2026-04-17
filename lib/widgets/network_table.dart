@@ -6,16 +6,12 @@ class NetworkSelectionTable extends StatelessWidget {
   final List<Map<String, dynamic>> networkNodesRaw;
   final Map<String, List<Map<String, dynamic>>> networkPortsByNode;
   final String? loadingPortsForNode;
-  final List<String> ipNetworkList;
-  final List<Map<String, dynamic>> ipRaw;
   final String? selectedNodeNetworkId;
   final String? siteCode;
   final Map<String, String?> tempSelectedPorts;
-  final Map<String, String?> tempIpNetworks;
   final Function(String nodeId) onNodeExpanded;
   final Function(String netId, int nodeNwID, String? port, int? portId, int? switchNwId, String? ip, int? ipId) onSelect;
   final Function(String netId, String? val) onPortChanged;
-  final Function(String netId, String? val) onIpChanged;
   final VoidCallback? onShowDiagram;
 
   const NetworkSelectionTable({
@@ -23,22 +19,18 @@ class NetworkSelectionTable extends StatelessWidget {
     required this.networkNodesRaw,
     required this.networkPortsByNode,
     required this.loadingPortsForNode,
-    required this.ipNetworkList,
-    required this.ipRaw,
     required this.selectedNodeNetworkId,
     required this.tempSelectedPorts,
-    required this.tempIpNetworks,
     required this.onNodeExpanded,
     required this.onSelect,
     required this.onPortChanged,
-    required this.onIpChanged,
     this.siteCode,
     this.onShowDiagram,
   });
 
   // ── Test popup ──
-  void _showTestPopup(BuildContext context, String netId, String nodeName) {
-    final ipVal = tempIpNetworks[netId] ?? '-';
+  void _showTestPopup(BuildContext context, String netId, String nodeName, String? nodeIp) {
+    final ipVal = nodeIp ?? '-';
     final port  = tempSelectedPorts[netId] ?? '-';
     showDialog(
       context: context,
@@ -102,7 +94,7 @@ class NetworkSelectionTable extends StatelessWidget {
                   Expanded(flex: 2, child: Text('NETWORK ID',         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
                   Expanded(flex: 3, child: Text('NODE NAME',          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
                   Expanded(flex: 2, child: Text('SITE CODE',          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
-                  Expanded(flex: 2, child: Text('SEARCH IP NETWORK',  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
+                  Expanded(flex: 2, child: Text('IP NETWORK',         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
                   Expanded(flex: 3, child: Text('SELECT PORT NETWORK',style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
                   Expanded(flex: 2, child: Text('TEST',               textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
                   Expanded(flex: 1, child: Text('ACTION',             textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade700))),
@@ -164,34 +156,24 @@ class NetworkSelectionTable extends StatelessWidget {
                             ),
                           ),
 
-                          // IP Search
+                          // IP Network (read-only — ดึงจาก node โดยตรง)
                           Expanded(
                             flex: 2,
                             child: Padding(
                               padding: const EdgeInsets.only(right: 12),
-                              child: Autocomplete<String>(
-                                initialValue: TextEditingValue(text: tempIpNetworks[netId] ?? ''),
-                                optionsBuilder: (tv) {
-                                  if (tv.text.isEmpty) return const Iterable<String>.empty();
-                                  return ipNetworkList.where((ip) => ip.contains(tv.text));
-                                },
-                                onSelected: (val) => onIpChanged(netId, val),
-                                fieldViewBuilder: (context, controller, focusNode, _) {
-                                  return TextField(
-                                    controller: controller, focusNode: focusNode,
-                                    onChanged: (val) => onIpChanged(netId, val),
-                                    decoration: InputDecoration(
-                                      hintText: 'e.g., 10.98...',
-                                      hintStyle: TextStyle(color: Colors.grey.shade400),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                      filled: true, fillColor: Colors.white, isDense: true,
-                                      suffixIcon: const Icon(Icons.search, size: 16, color: Colors.grey),
-                                    ),
-                                    style: const TextStyle(fontSize: 13),
-                                  );
-                                },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.grey.shade300)),
+                                child: Text(
+                                  node['ip']?.toString() ?? '-',
+                                  style: TextStyle(fontSize: 13,
+                                    color: node['ip'] != null ? AppColors.dark : Colors.grey.shade400,
+                                    fontWeight: node['ip'] != null ? FontWeight.w500 : FontWeight.normal),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ),
                           ),
@@ -245,7 +227,7 @@ class NetworkSelectionTable extends StatelessWidget {
                               padding: const EdgeInsets.only(right: 8),
                               child: ElevatedButton.icon(
                                 onPressed: hasPort
-                                  ? () => _showTestPopup(context, netId, nodeName)
+                                  ? () => _showTestPopup(context, netId, nodeName, node['ip']?.toString())
                                   : null,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.info,
@@ -266,16 +248,16 @@ class NetworkSelectionTable extends StatelessWidget {
                             child: ElevatedButton(
                               onPressed: hasPort && selectedPortData['status'] == 'available'
                                 ? () {
-                                    final ipVal = tempIpNetworks[netId] ?? '';
-                                    final ipObj = ipRaw.firstWhere((i) => i['IP'].toString() == ipVal, orElse: () => {});
+                                    final nodeIp   = node['ip']?.toString();
+                                    final nodeIpId = node['ip_id'] as int?;
                                     onSelect(
                                       netId,
                                       node['NodeNwID'] as int,
                                       selectedPortName,
                                       selectedPortData.isNotEmpty ? selectedPortData['Interface_ID'] as int? : null,
                                       selectedPortData.isNotEmpty ? selectedPortData['SwitchNw_ID'] as int? : null,
-                                      ipVal.isNotEmpty ? ipVal : null,
-                                      ipObj.isNotEmpty ? ipObj['IP_id'] as int : null,
+                                      nodeIp,
+                                      nodeIpId,
                                     );
                                     if (onShowDiagram != null) {
                                       Future.microtask(() => onShowDiagram!());
