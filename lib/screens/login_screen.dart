@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'node_assist_screen.dart';
-import 'forgot_password_screen.dart'; // 📍 จุดที่ 1: เพิ่ม Import ตรงนี้ครับ
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,29 +14,46 @@ class _LoginScreenState extends State<LoginScreen> {
   final _api             = ApiService();
   final _usernameCtrl    = TextEditingController();
   final _passwordCtrl    = TextEditingController();
-  bool  _obscure         = true;
-  bool  _loading         = false;
-  String _error          = '';
+  bool  _obscurePassword = true;
+  bool  _isLoading       = false;
+  String _errorMessage   = '';
 
   Future<void> _handleLogin() async {
     if (_usernameCtrl.text.trim().isEmpty || _passwordCtrl.text.isEmpty) {
-      setState(() => _error = 'กรอก Username และ Password ด้วย');
+      setState(() => _errorMessage = 'กรอก Username และ Password ด้วย');
       return;
     }
-    setState(() { _loading = true; _error = ''; });
+    setState(() { _isLoading = true; _errorMessage = ''; });
 
-    final result = await _api.login(_usernameCtrl.text.trim(), _passwordCtrl.text);
+    // จำลองเวลาโหลดให้ดูเนียนๆ 1 วินาที
+    await Future.delayed(const Duration(seconds: 1));
+
     if (!mounted) return;
 
-    if (result != null && result['error'] == null) {
+    // 📍 เช็คเงื่อนไขจากฝั่ง Frontend (ใช้ admin / admin)
+    if (_usernameCtrl.text.trim() == 'admin' && _passwordCtrl.text == 'admin') {
+      
+      // สร้างข้อมูล User จำลองเพื่อส่งเข้าไปให้ระบบข้างในทำงานได้
+      final mockUser = {
+        'id': '999',
+        'name': 'Win (Admin)',
+        'username': 'admin',
+        'roleName': 'Manager',
+        'error': null,
+      };
+
       Navigator.pushReplacement(context, PageRouteBuilder(
-        pageBuilder: (_, __, ___) => NodeAssistScreen(currentUser: result),
+        pageBuilder: (_, __, ___) => NodeAssistScreen(currentUser: mockUser),
         transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 400),
       ));
     } else {
-      setState(() { _error = result?['error'] ?? 'Login ไม่สำเร็จ'; _loading = false; });
+      // ถ้าพิมพ์ผิด
+      setState(() { 
+        _errorMessage = 'Username หรือ Password ไม่ถูกต้อง (ให้ลองใช้ admin / admin)'; 
+        _isLoading = false; 
+      });
     }
   }
 
@@ -45,11 +62,12 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
       body: Row(children: [
+        // ฝั่งซ้าย (Branding)
         Expanded(flex: 5, child: Container(
           color: const Color(0xFF212529),
           child: Stack(children: [
             Positioned.fill(child: Opacity(opacity: 0.1,
-              child: GridPaper(color: Colors.white, interval: 100, divisions: 2, subdivisions: 1))),
+              child: const GridPaper(color: Colors.white, interval: 100, divisions: 2, subdivisions: 1))),
             Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: const [
               Icon(Icons.hub_outlined, size: 80, color: Colors.blueAccent),
               SizedBox(height: 20),
@@ -63,12 +81,12 @@ class _LoginScreenState extends State<LoginScreen> {
             ])),
           ]),
         )),
+        // ฝั่งขวา (Login Form)
         Expanded(flex: 4, child: Container(
           color: Colors.white,
           child: Center(child: Container(
             constraints: const BoxConstraints(maxWidth: 400),
             padding: const EdgeInsets.symmetric(horizontal: 40),
-<<<<<<< HEAD
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -76,65 +94,69 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const Text('System Login', style: TextStyle(
                   fontSize: 28, fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary)),
+                  color: Color(0xFF0F172A))), // ใช้สีแทน AppColors.textPrimary
                 const SizedBox(height: 8),
                 Text('Please enter your credentials to access the portal.',
                   style: TextStyle(color: Colors.grey.shade500, fontSize: 14)),
                 const SizedBox(height: 40),
 
-                // Error
+                // Error Message Box
                 if (_errorMessage.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.all(12),
                     margin: const EdgeInsets.only(bottom: 20),
                     decoration: BoxDecoration(
-                      color: AppColors.dangerLight,
+                      color: Colors.red.shade50, // แทน AppColors.dangerLight
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.danger.withOpacity(0.3))),
+                      border: Border.all(color: Colors.red.shade300)),
                     child: Row(children: [
-                      const Icon(Icons.error_outline, color: AppColors.danger, size: 20),
+                      Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
                       const SizedBox(width: 10),
                       Expanded(child: Text(_errorMessage,
-                        style: const TextStyle(color: AppColors.danger, fontSize: 13))),
+                        style: TextStyle(color: Colors.red.shade700, fontSize: 13))),
                     ]),
                   ),
 
-                // Username
-                AppWidgets.formField(
-                  label: 'Username',
-                  field: TextField(
-                    controller: _usernameCtrl,
-                    decoration: AppInputDecoration.standard(
-                      hint: 'e.g., admin',
-                      prefix: const Icon(Icons.person_outline,
-                        color: AppColors.textMuted, size: 20)),
+                // Username Field
+                const Text('Username', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _usernameCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'e.g., admin',
+                    prefixIcon: const Icon(Icons.person_outline, color: Colors.grey, size: 20),
+                    filled: true,
+                    fillColor: const Color(0xFFF8F9FA),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                // Password
-                AppWidgets.formField(
-                  label: 'Password',
-                  field: TextField(
-                    controller: _passwordCtrl,
-                    obscureText: _obscurePassword,
-                    decoration: AppInputDecoration.standard(
-                      hint: '••••••••',
-                      prefix: const Icon(Icons.lock_outline,
-                        color: AppColors.textMuted, size: 20),
-                      suffix: IconButton(
-                        icon: Icon(
-                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                          color: AppColors.textMuted, size: 20),
-                        onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                      ),
+                // Password Field
+                const Text('Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _passwordCtrl,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    hintText: '••••••••',
+                    prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey, size: 20),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        color: Colors.grey, size: 20),
+                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
+                    filled: true,
+                    fillColor: const Color(0xFFF8F9FA),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
                   ),
                 ),
                 const SizedBox(height: 12),
 
-                // 📍 จุดที่ 2: แก้ตรงปุ่มให้กดแล้วเด้งไปหน้า ForgotPasswordScreen ครับ
+                // Forgot Password Link
                 Align(alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () {
@@ -144,21 +166,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       );
                     },
                     child: const Text('Forgot Password?',
-                      style: TextStyle(color: AppColors.primary, fontSize: 13)),
+                      style: TextStyle(color: Color(0xFF0056B3), fontSize: 13)), // แทน AppColors.primary
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                // Submit
+                // Submit Button
                 SizedBox(height: 50,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
-                    style: AppButtonStyles.primary(
-                      padding: const EdgeInsets.symmetric(vertical: 14)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0056B3),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
                     child: _isLoading
                       ? const SizedBox(width: 22, height: 22,
-                          child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2))
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Text('Sign In to Portal',
                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
@@ -170,49 +194,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
               ],
             ),
-=======
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const Text('System Login', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF212529))),
-              const SizedBox(height: 8),
-              Text('Please enter your credentials to access the portal.', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
-              const SizedBox(height: 40),
-              if (_error.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade200)),
-                  child: Row(children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 20), const SizedBox(width: 10),
-                    Expanded(child: Text(_error, style: const TextStyle(color: Colors.red, fontSize: 13))),
-                  ])),
-              const Text('Username', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
-              const SizedBox(height: 8),
-              TextField(controller: _usernameCtrl, onSubmitted: (_) => _handleLogin(),
-                decoration: InputDecoration(
-                  hintText: 'e.g., admin', prefixIcon: const Icon(Icons.person_outline, color: Colors.grey),
-                  filled: true, fillColor: const Color(0xFFF8F9FA),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF0056B3), width: 2)))),
-              const SizedBox(height: 20),
-              const Text('Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF495057))),
-              const SizedBox(height: 8),
-              TextField(controller: _passwordCtrl, obscureText: _obscure, onSubmitted: (_) => _handleLogin(),
-                decoration: InputDecoration(
-                  hintText: '••••••••', prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey),
-                  suffixIcon: IconButton(icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: Colors.grey, size: 20), onPressed: () => setState(() => _obscure = !_obscure)),
-                  filled: true, fillColor: const Color(0xFFF8F9FA),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF0056B3), width: 2)))),
-              const SizedBox(height: 32),
-              SizedBox(height: 50, child: ElevatedButton(
-                onPressed: _loading ? null : _handleLogin,
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0056B3), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), elevation: 0),
-                child: _loading
-                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text('Sign In to Portal', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))),
-              const SizedBox(height: 40),
-              const Text('© 2026 Node Assist Pro. All rights reserved.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
-            ]),
->>>>>>> e9e593148938bd62a592a983205949784f35b82c
           )),
         )),
       ]),

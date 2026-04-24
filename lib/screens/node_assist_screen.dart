@@ -14,13 +14,8 @@ import 'bulk_import_screen.dart';
 import 'domain_screen.dart';
 import 'model_screen.dart';
 import 'site_screen.dart';
-<<<<<<< HEAD
 import 'user_screen.dart';
 // 🧹 ลบ import role_screen.dart ออกไปแล้วครับ
-=======
-import 'network_node_screen.dart';
-import 'user_screen.dart';
->>>>>>> e9e593148938bd62a592a983205949784f35b82c
 
 class NodeAssistScreen extends StatefulWidget {
   final Map<String, dynamic>? currentUser;
@@ -384,20 +379,11 @@ class _NodeAssistScreenState extends State<NodeAssistScreen> {
             _selectedMenuIndex == 0 ? _buildDashboardPage()
             : _selectedMenuIndex == 1 ? _buildSearchAndReservePage()
             : _selectedMenuIndex == 2 ? _buildTopologyMockPage()
-<<<<<<< HEAD
             : _selectedMenuIndex == 3 ? const BulkImportScreen()
             : _selectedMenuIndex == 4 ? const DomainScreen()
             : _selectedMenuIndex == 5 ? const ModelScreen()
             : _selectedMenuIndex == 6 ? const SiteScreen()
             : const UserScreen()), // 👈 จบที่หน้านี้ครับ
-=======
-            : _selectedMenuIndex == 3 ? BulkImportScreen(canEdit: _canEdit('Bulk Import'))
-            : _selectedMenuIndex == 4 ? DomainScreen(canEdit: _canEdit('Domain & IP'))
-            : _selectedMenuIndex == 5 ? ModelScreen(canEdit: _canEdit('Models'))
-            : _selectedMenuIndex == 6 ? SiteScreen(canEdit: _canEdit('Site Code'))
-            : _selectedMenuIndex == 7 ? NetworkNodeScreen(canEdit: _canEdit('Network Nodes'))
-            : const UserScreen()),
->>>>>>> e9e593148938bd62a592a983205949784f35b82c
         ])),
       ]),
     );

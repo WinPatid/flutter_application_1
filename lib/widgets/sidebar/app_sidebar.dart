@@ -20,7 +20,6 @@ class AppSidebar extends StatelessWidget {
     this.currentUser,
   });
 
-<<<<<<< HEAD
   static const List<_SidebarEntry> _entries = [
     _SidebarEntry(Icons.dashboard_outlined,   'Dashboard',        0),
     _SidebarEntry(Icons.add_circle_outline,   'Search & Reserve', 1),
@@ -29,25 +28,12 @@ class AppSidebar extends StatelessWidget {
     _SidebarEntry(Icons.dns_outlined,         'Domain & IP',      4),
     _SidebarEntry(Icons.memory_outlined,      'Models',           5),
     _SidebarEntry(Icons.business_outlined,    'Site Code',        6),
-    _SidebarEntry(Icons.people_outlined,      'Users',            7), 
-    // ลบเมนู Roles ออกไปแล้วครับ คลีนๆ
-=======
-  static const List<_SidebarEntry> _allEntries = [
-    _SidebarEntry(Icons.dashboard_outlined,       'Dashboard',        0),
-    _SidebarEntry(Icons.add_circle_outline,       'Search & Reserve', 1),
-    _SidebarEntry(Icons.hub_outlined,             'Topology Map',     2),
-    _SidebarEntry(Icons.upload_file_outlined,     'Bulk Import',      3),
-    _SidebarEntry(Icons.dns_outlined,             'Domain & IP',      4),
-    _SidebarEntry(Icons.memory_outlined,          'Models',           5),
-    _SidebarEntry(Icons.business_outlined,        'Site Code',        6),
-    _SidebarEntry(Icons.device_hub_outlined,      'Network Nodes',    7),
-    _SidebarEntry(Icons.manage_accounts_outlined, 'Users',            8),
->>>>>>> e9e593148938bd62a592a983205949784f35b82c
+    _SidebarEntry(Icons.people_outlined,      'Users',            7),
   ];
 
   List<_SidebarEntry> get _visibleEntries {
-    if (pageAccess.isEmpty) return _allEntries;
-    return _allEntries.where((e) {
+    if (pageAccess.isEmpty) return _entries;
+    return _entries.where((e) {
       if (e.label == 'Users') {
         return currentUser?['role_name'] == 'Manager' ||
                pageAccess['Users'] != null;
@@ -58,81 +44,33 @@ class AppSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final entries  = _visibleEntries;
-    final userName = currentUser?['name']?.toString() ?? '';
-    final roleName = currentUser?['role_name']?.toString() ?? '';
+    final entries = _visibleEntries;
 
     return Container(
       width: 240, color: AppColors.sidebarBg,
       child: Column(children: [
-<<<<<<< HEAD
-=======
-
-        // Logo
->>>>>>> e9e593148938bd62a592a983205949784f35b82c
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-<<<<<<< HEAD
-            SvgPicture.asset('assets/images/logo.svg', width: 80, colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
-            const SizedBox(height: 8),
-            Text('Network Management', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11, letterSpacing: 0.5)),
-          ]),
-        ),
-        const Divider(color: Colors.white12, height: 1),
-        const SizedBox(height: 8),
-        ..._entries.map((e) => SidebarItem(icon: e.icon, label: e.label, index: e.index, selectedIndex: selectedIndex, onTap: onItemTap)),
-        const Spacer(),
-=======
             SvgPicture.asset('assets/images/logo.svg', width: 80,
               colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
             const SizedBox(height: 8),
             Text('Network Management',
-              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11, letterSpacing: 0.5)),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, letterSpacing: 0.5)),
           ]),
         ),
-
-        // User info card
-        if (userName.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.07),
-              borderRadius: BorderRadius.circular(8)),
-            child: Row(children: [
-              CircleAvatar(radius: 14,
-                backgroundColor: AppColors.primary.withOpacity(0.3),
-                child: Text(userName[0].toUpperCase(),
-                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold))),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(userName, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                Text(roleName, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
-              ])),
-            ]),
-          ),
-
         const Divider(color: Colors.white12, height: 1),
         const SizedBox(height: 8),
-
-        // Menu
-        Expanded(child: ListView(
-          children: entries.map((e) => SidebarItem(
-            icon: e.icon, label: e.label, index: e.index,
-            selectedIndex: selectedIndex, onTap: onItemTap)).toList())),
-
->>>>>>> e9e593148938bd62a592a983205949784f35b82c
+        ...entries.map((e) => SidebarItem(
+          icon: e.icon, label: e.label, index: e.index,
+          selectedIndex: selectedIndex, onTap: onItemTap)),
+        const Spacer(),
         const Divider(color: Colors.white12, height: 1),
         ListTile(
           leading: const Icon(Icons.logout, color: Colors.redAccent, size: 20),
           title: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontSize: 14)),
-<<<<<<< HEAD
           onTap: onLogout,
         ),
-=======
-          onTap: onLogout),
->>>>>>> e9e593148938bd62a592a983205949784f35b82c
         const SizedBox(height: 8),
       ]),
     );
@@ -140,6 +78,8 @@ class AppSidebar extends StatelessWidget {
 }
 
 class _SidebarEntry {
-  final IconData icon; final String label; final int index;
+  final IconData icon;
+  final String label;
+  final int index;
   const _SidebarEntry(this.icon, this.label, this.index);
 }
